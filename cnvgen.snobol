@@ -1,18 +1,17 @@
 -TITLE   CNVGEN                                                                 
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * GENERATE THE ACTUAL COBOL STATEMENTS NOW..                           *        
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    INPUT(.FILES,'FILE')                                                        
-    INPUT(.STRING,'STRING')                                                     
-    INPUT(.COMMENT,'COMMENT')                                                   
-    INPUT(.SYM,'SYM')                                                           
-    INPUT(.MAP,'MAP')                                                           
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    INPUT(.FILES,11,'cnvfile.tmp[L1000]')                                                        
+    INPUT(.STRING,12,'cnvstring.tmp[L1000]')                                                     
+    INPUT(.COMMENT,13,'cnvcomment.tmp[L1000]')
+    INPUT(.SYM,14,'cnvsym.tmp[L1000]')                                                           
+    INPUT(.MAP,15,'cnvmap.tmp[L1000]')                                                           
+    OUTPUT(.CODE,16,'cnvcode2.tmp[L1000]')                                                        
                                                                                 
 *----------------------------------------------------------------------*        
 * DEFINE DATA TYPES..                                                  *        
@@ -30,6 +29,7 @@
     DEFINE('CONVERTNAME(VARIABLE)A,TYPE,OLDNAME')                               
     DEFINE('GETSOURCE()LINE,FLAG,NEST,TYPE,VALUE')                              
     DEFINE('CVRTLINE(LINE)NEWLINE,A,B')                                         
+    DEFINE('RTRIM(S)X')
     OPSYN('#','OPT',1)                                                          
 *----------------------------------------------------------------------*        
 * NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
@@ -74,14 +74,18 @@
     CMNTBL = TABLE(300,50)                                                      
     NAMETBL = TABLE(300,50)                                                     
     NEWSYM  = TABLE(300,50)                                                     
-                                                                                
-    MAPHEAD = LIST(MAP)                          :F(XMAPREAD)                   
+    IN = MAP                                     :F(XMAPREAD)                  
+    IDENT(IN)                                    :S(XMAPREAD)
+    MAPHEAD = LIST(IN)   
     MAPC = MAPHEAD                                                              
-READMAP NEXT(MAPC) = LIST(MAP)                   :F(READCMNT)                   
+READMAP IN = MAP                                 :F(READCMNT)
+    IDENT(IN)                                    :S(READCMNT)
+    NEXT(MAPC) = LIST(IN)                        :F(READCMNT)                   
     MAPC = NEXT(MAPC)                            :(READMAP)                     
 XMAPREAD                                                                        
                                                                                 
 READCMNT IN = COMMENT                            :F(READSTR)                    
+    IDENT(IN)                                    :S(READSTR)
     IN BREAK(';') . I ';' REM . C                                               
     CMNTBL<I> = C                                :(READCMNT)                    
                                                                                 
@@ -89,6 +93,7 @@ READCMNT IN = COMMENT                            :F(READSTR)
 * READ THE STRING TABLE, CONVERT IMBEDDED QUOTES TO DOUBLE QUOTES..    *        
 *----------------------------------------------------------------------*        
 READSTR IN = STRING                              :F(INITDONE)                   
+    IDENT(IN)                                    :S(INITDONE)
     IN BREAK(';') . I ';' REM . C                                               
     C = IDENT(C) " "                                                            
     XX = RPOS(0)                                                                
@@ -119,7 +124,7 @@ INITDONE
 *----------------------------------------------------------------------*        
     CODE = 'FILE-CONTROL.'                                                      
 READFILE LINE = FILES                            :F(ENDFILE)                    
-                                                                                
+    IDENT(LINE)                                  :S(ENDFILE)                
     LINE BREAK(';') . ID ';'                                                    
 +      BREAK(';') . NUM ';'                                                     
 +      BREAK(';') . IO ';'                                                      
@@ -149,7 +154,7 @@ ORG_CONT
        CODE = '.'                                :(READFILE)                    
 ENDFILE                                                                         
 * REWIND THE FILES BACK TO THE BEGINING..                                       
-       REWIND('FILE')                                                           
+       REWIND(11)                                                        
 -EJECT                                                                          
 *----------------------------------------------------------------------*        
 * START THE DATA DIVISION..                                            *        
@@ -159,8 +164,10 @@ ENDFILE
 * FILE SECTION..                                                       *        
 *----------------------------------------------------------------------*        
        LINE = FILES                              :F(FILEEND)                    
+       IDENT(LINE)                               :S(FILEEND)
        CODE = 'FILE SECTION.'                    :(GETFILE)                     
 FILEREAD LINE = FILES                            :F(FILEEND)                    
+       IDENT(LINE)                               :S(FILEEND)
 GETFILE LINE BREAK(';') . ID ';'                                                
 +      BREAK(';') . NUM ';'                                                     
 +      BREAK(';') . IO ';'                                                      
@@ -194,16 +201,16 @@ FILEEND
     CODE = 'WORKING-STORAGE SECTION.'                                           
 * DUMP ALL MAPS THAT ARE NOT ASSOCIATED WITH A FILE.                            
        MAPC = MAPHEAD                                                           
+       IDENT(MAPC)                               :S(MAPCDONE)
 FINDMAP                                                                         
-       IDENT(MAPC)                               :S(NEXTDMAPX)                  
        VALUE(MAPC) 'M;'                          :F(NEXTDMAP)                   
        INFD = 1                                                                 
-       MAPC = PUTAMAP(MAPC)                      :(FINDMAP)                     
+       MAPC = PUTAMAP(MAPC)                      :(NEXTDMAPX)                   
 NEXTDMAP                                                                        
-       MAPC = NEXT(MAPC)                         :(FINDMAP)                     
+       MAPC = NEXT(MAPC)                                                        
 NEXTDMAPX                                                                       
-                                                                                
-                                                                                
+       IDENT(MAPC)                               :F(FINDMAP)                    
+MAPCDONE
 * DUMP ALL OTHER SYMBOLS NOW..                                                  
        CODE = '01 UNMAPPED-BASIC-VARIABLES.'                                    
 NXTSYM   LINE = SYM                              :F(SYMEND)                     
@@ -497,6 +504,8 @@ GETSOURCE
 *----------------------------------------------------------------------*        
 * MISC FUNCTIONS..                                                     *        
 *----------------------------------------------------------------------*        
+RTRIM
+    S ARB . X SPAN(' ') RPOS(0) = X              :(RETURN)
 INCR $VAR = $VAR + 1                                                            
     INCR = $VAR                                  :(RETURN)                      
 DECR $VAR = $VAR - 1                                                            

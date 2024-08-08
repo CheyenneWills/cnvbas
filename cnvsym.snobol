@@ -1,5 +1,5 @@
 -TITLE   CNVSYM                                                                 
--NOEXECUTE                                                                      
+*#-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * FIND ALL BASIC VARIABLES AND GENERATE A SYMBOL TABLE                 *        
 *                                                                      *        
@@ -11,9 +11,9 @@
 *  12  -  SYM - SYMBOL TABLE                                           *        
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    INPUT(.MAP,'MAP')                                                           
-    OUTPUT(.SYM,'SYM')                                                          
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    INPUT(.MAP,11,'cnvmap.tmp[L1000]')                                                           
+    OUTPUT(.SYM,12,'cnvsym.tmp[L1000]')                                                          
 -SPACE                                                                          
 *----------------------------------------------------------------------*        
 * NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        

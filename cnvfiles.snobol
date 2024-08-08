@@ -1,5 +1,5 @@
 -TITLE   CNVFILES                                                               
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * FIND ALL OPEN STATEMENTS                                             *        
 *                                                                      *        
@@ -11,9 +11,9 @@
 *  12  -  FILE - FILE TABLE                                            *        
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.FILE,'FILE')                                                        
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')                                                        
+    OUTPUT(.FILE,12,'cnvfile.tmp[L1000]')                                                        
 -SPACE                                                                          
 *----------------------------------------------------------------------*        
 * NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
@@ -60,8 +60,7 @@ READ
 +                                                :($('PROC_' TYPE))             
 PROC_C                                                                          
 PROC_L                                                                          
-PUN                                                                             
-    CODE = LINE                                  :(READ)                        
+PUN CODE = LINE                                  :(READ)                        
                                                                                 
 PROC_S                                                                          
     DATA #SEP BL 'OPEN'                          :F(PUN)                        

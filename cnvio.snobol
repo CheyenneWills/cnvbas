@@ -1,5 +1,5 @@
 -TITLE   CNVIO                                                                  
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * PROCESS I/O STATEMENTS.                                              *        
 *                                                                      *        
@@ -13,10 +13,9 @@
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    INPUT(.FILES,'FILES')                                                       
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    INPUT(.FILES,11,'cnvfiles.tmp[L1000]')                                                       
+    OUTPUT(.CODE,12,'cnvcode2.tmp[L1000]')                                                        
 *----------------------------------------------------------------------*        
 * DEFINE SUBROUTINES AND DATA                                          *        
 *----------------------------------------------------------------------*        
@@ -49,6 +48,7 @@ GETTEXT
 *-- READ IN A FILE                                                              
 GETFILE                                                                         
     IN = FILES                                   :F(FRETURN)                    
+    IDENT(IN)                                    :S(FRETURN)
     IN BREAK(';') . ID ';'                                                      
 +      BREAK(';') . NUM ';'                                                     
 +      BREAK(';') . IO ';'                                                      

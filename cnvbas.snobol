@@ -1,14 +1,14 @@
 -TITLE   CNVBAS                                                                 
--CODE                                                                           
 -LIST LEFT                                                                      
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * RENUMBER THE PARAGRAPH NAMES FROM THE CONVERTOR.                     *        
 *----------------------------------------------------------------------*        
     &TRIM = 1                                                                   
     &DUMP = 1                                                                   
     &ANCHOR = 1                                                                 
-    INPUT(.SOURCE,'SOURCE')                                                     
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')                                                     
     PARATBL = TABLE(100)                                                        
     DEFINE('NEWNAME(OLD)NEW,NUM1,TYPE')                                         
     LABEL = 100                                                                 
@@ -40,6 +40,7 @@
 *   IGNORE THE ID AND DATA DIVISIONS.                                  *        
 *----------------------------------------------------------------------*        
 READ1 LINE = SOURCE                              :F(ERROR1)                     
+      IDENT(LINE)                                :S(ERROR1)
 * STRIP OFF LEADING BLANKS..                                                    
      LINE BL =                                                                  
      LINE 'PROCEDURE DIVISION.'                  :F(READ1)                      
@@ -47,6 +48,7 @@ READ1 LINE = SOURCE                              :F(ERROR1)
 * WE ARE NOW IN THE PROCEDURE DIVISION                                 *        
 *----------------------------------------------------------------------*        
 READ2 LINE = SOURCE                              :F(PHASE2)                     
+    IDENT(LINE)                                  :S(PHASE2)
     LINE BL =                                                                   
     LINE '*'                                     :S(READ2)                      
     LINE PARA . PARANAME BL (RPOS(0) | '.')      :F(READ2)                      
@@ -55,9 +57,9 @@ READ2 LINE = SOURCE                              :F(PHASE2)
 * NOW START THE SUBSITUTION..                                          *        
 *----------------------------------------------------------------------*        
 PHASE2                                                                          
-    REWIND('SOURCE')                                                            
+    REWIND(10)                                                            
 READ3    LINE = SOURCE                                                          
-     PUNCH = LINE                                                               
+     CODE = LINE                                                               
 * STRIP OFF LEADING BLANKS..                                                    
      LINE BL =                                                                  
      LINE BL 'PROCEDURE DIVISION.'                  :F(READ3)                   
@@ -65,6 +67,7 @@ READ3    LINE = SOURCE
 * NOW SITTING IN THE PROCEDURE DIVISION..                              *        
 *----------------------------------------------------------------------*        
 READ4 LINE = SOURCE                              :F(END)                        
+     IDENT(LINE)                                 :S(END)
      LINE BL '*'                                 :S(PUNOUT)                     
      &ANCHOR = 0                                                                
      LINE 'GO TO' BL PARA . PARANAME = 'GO TO ' PARATBL<PARANAME>               
@@ -73,7 +76,7 @@ READ4 LINE = SOURCE                              :F(END)
      &ANCHOR = 1                                                                
      LINE BL . A PARA . PARANAME (BL (RPOS(0) | '.')) . B =                     
 +        A PARATBL<PARANAME> B                                                  
-PUNOUT PUNCH = LINE                              :(READ4)                       
+PUNOUT CODE = LINE                              :(READ4)                       
 *----------------------------------------------------------------------*        
 * RENAME A PARAGRAPH LABEL TO THE NEW FORMAT                           *        
 *----------------------------------------------------------------------*        
@@ -107,4 +110,6 @@ LBL-ENDIF-PARA
      NEWNAME = LABEL '-ENDIF-PARA'               :(RETURN1)                     
 RETURN1                                                                         
      LABEL = LABEL + INCR                        :(RETURN)                      
+ERROR1
+     OUTPUT = 'ERROR READING FILE'               :(END)
 END                                                                             

@@ -1,5 +1,5 @@
 -TITLE   CNVMOD                                                                 
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * PROCESS BASIC STATEMENT MODIFIERS                                    *        
 *                                                                      *        
@@ -11,9 +11,8 @@
 *  11  -  CODE                           RECFM=F LRECL=500             *        
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')                                                        
     &DUMP = 1                                                                   
     &TRIM = 1                                                                   
     &ANCHOR = 1                                                                 

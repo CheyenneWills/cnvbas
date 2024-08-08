@@ -1,5 +1,5 @@
 -TITLE   CNVTRAN                                                                
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * PERFORM SIMPLE TRANSFORMATIONS.                                      *        
 *                                                                      *        
@@ -12,9 +12,8 @@
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL')                                                
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')                                                        
 *----------------------------------------------------------------------*        
 * DEFINE SUBROUTINES AND DATA                                          *        
 *----------------------------------------------------------------------*        
@@ -26,10 +25,7 @@
     DEFINE('INSERT(C,T,V)N')                                                    
     DEFINE('INSERTB(C,T,V)N')                                                   
     DEFINE('GETNEXT(C)N')                                                       
-    DEFINE('GETTEXT()IN,L,T,V,F')                                               
-    DEFINE('INCR(VAR)')                                                         
-    DEFINE('DECR(VAR)')                                                         
-    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+    DEFINE('GETTEXT()IN,L,T,V,F')                :(GETTEXT_END)                 
 *----------------------------------------------------------------------*        
 * RETURN THE NEXT STATEMENT OR LABEL                                   *        
 *----------------------------------------------------------------------*        
@@ -49,11 +45,14 @@ GETTEXT
     IN = SOURCE                                  :F(FRETURN)                    
     IN BREAK(';') . F ';' BREAK(';') . L ';' BREAK(';') . T ';' REM . V         
     GETTEXT = TEXT(T,V,L,F,NULL)                 :(RETURN)                      
-                                                                                
+GETTEXT_END                                                                     
                                                                                 
 *----------------------------------------------------------------------*        
 * DEFINE SOME HANDY PATTERNS                                           *        
 *----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
 INCR $VAR = $VAR + 1                                                            
     INCR = $VAR                                  :(RETURN)                      
 DECR $VAR = $VAR - 1                                                            

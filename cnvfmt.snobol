@@ -1,5 +1,5 @@
 -TITLE   CNVFMT                                                                 
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * FORMAT A BASIC PROGRAM INTO INTERNAL REPRESENTATION                  *        
 *                                                                      *        
@@ -15,12 +15,11 @@
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMIANL,'TERMINAL')                                                
-    OUTPUT(.STRING,'STRING')                                                    
-    OUTPUT(.COMMENT,'COMMENT')                                                  
-    OUTPUT(.MAP,'MAP')                                                          
+    INPUT(.SOURCE,10)                                                     
+    OUTPUT(.CODE,11,'cnvcode.tmp[L1000]')                                                        
+    OUTPUT(.STRING,12,'cnvstring.tmp[L1000]')                                                    
+    OUTPUT(.COMMENT,13,'cnvcomment.tmp[L1000]')                                                  
+    OUTPUT(.MAP,14,'cnvmap.tmp[L1000]')                                                          
                                                                                 
 *----------------------------------------------------------------------*        
 * DEFINE THE SUBROUTINES                                               *        
@@ -57,13 +56,13 @@ ENDOPT
     MAPPAT = (BREAK(",") ',' #(';' ARB ';') ) |                                 
 +            (ARB #(';' ARB ';') BL RPOS(0))                                    
                                                                                 
-    DELIMITERS = (' &\:"!' "'")                                                 
+    DELIMITERS = (' &\"!' "'")                                                  
                                                                                 
 *----------------------------------------------------------------------*        
 * NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
 * THE BACKSLASH (HEX E0)                                               *        
 *----------------------------------------------------------------------*        
-    SEP = '\'                                                                   
+    SEP = ':'                                                                   
 -EJECT                                                                          
 *----------------------------------------------------------------------*        
 * READ IN THE PROGRAM                                                  *        
@@ -95,7 +94,7 @@ NOLBL
 TOKLOOP                                                                         
     DATA BL =                                                                   
     IDENT(DATA)                                  :S(READLOOP)                   
-    TYPE = GETTOKEN()                    :S($("T_" TYPE))F(READLOOP)            
+    TYPE = GETTOKEN()                            :S($("T_" TYPE))F(READLOOP)            
 T_CMNT                                                                          
 *----------------------------------------------------------------------*        
 * CHECK TO SEE IF THE CURRENT OUT STARTS WITH A MAP AND THE COMMENT    *        
@@ -143,7 +142,6 @@ GETTOKEN
     DATA '!'                                     :S(TOKCMNT)                    
     DATA '&'                                     :S(TOKCONTINUE)                
     DATA '"' | "'"                               :S(TOKSTR)                     
-    DATA ':'                                     :S(TOKCOLON)                   
     DATA SEP                                     :S(TOKSEP)                     
                                                                                 
     DATA (BREAK(DELIMITERS) | REM) . TOKEN =                                    
@@ -174,9 +172,6 @@ TOKELSE
     DATA 'ELSE' =                                                               
     TOKEN = 'ELSE'                                                              
     GETTOKEN = 'ELSE'                            :(RETURN)                      
-TOKCOLON                                                                        
-    DATA ':' BL =                                                               
-    GETTOKEN = 'SEP'                             :(RETURN)                      
 TOKSEP                                                                          
     DATA SEP BL =                                                               
     GETTOKEN = 'SEP'                             :(RETURN)                      

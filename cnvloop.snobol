@@ -1,5 +1,5 @@
 -TITLE   CNVLOOP                                                                
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * PROCESS LOOP CONSTRUCTS AND NESTED IFS                               *        
 *                                                                      *        
@@ -12,9 +12,8 @@
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')
 *----------------------------------------------------------------------*        
 * DEFINE SUBROUTINES AND DATA                                          *        
 *----------------------------------------------------------------------*        
@@ -44,9 +43,7 @@ PUSH_END
 *----------------------------------------------------------------------*        
 GETNEXT                                                                         
     C = IDENT(C) CURRENT                                                        
-    TERMINAL = C                                                                
     N = C                                                                       
-    IDENT(C)                                     :S(FRETURN)                    
 GETNEXTL                                                                        
     N = NEXT(N)                                                                 
     IDENT(N)                                     :S(FRETURN)                    
@@ -153,7 +150,6 @@ ENDREAD
     CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT(CURRENT)                         
     FORLBL = 0                                                                  
 MAINLOOP                                                                        
-    TERMINAL = 'MAINLOOP'                                                       
     IDENT(TYPE(CURRENT),'L')                     :S(NEXTLOOP)                   
     VALUE(CURRENT) #SEP ('FOR' | 'WHILE' | 'UNTIL' | 'NEXT') . TYPE             
 +                           :F(NEXTLOOP)S($('LOOP_' TYPE))                      
@@ -161,7 +157,6 @@ MAINLOOP
 * PROCESS FOR STATEMENTS..                                             *        
 *----------------------------------------------------------------------*        
 LOOP_FOR                                                                        
-    TERMINAL = 'LOOP_FOR'                                                       
     LINE = VALUE(CURRENT)                                                       
 *----------------------------------------------------------------------*        
 * TWO FORMS OF FOR                                                     *        
@@ -207,7 +202,6 @@ FOR_UNTIL
 * PROCESS THE FILE STATEMENT                                           *        
 *----------------------------------------------------------------------*        
 LOOP_WHILE                                                                      
-    TERMINAL = 'LOOP_WHILE'                                                     
     VALUE(CURRENT) #SEP . S 'WHILE' BL REM . COND                               
     COND = TRIM(COND)                                                           
     VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-WHILE-PARA THRU '             
@@ -219,7 +213,6 @@ LOOP_WHILE
 * PROCESS THE UNTIL STATEMENT                                          *        
 *----------------------------------------------------------------------*        
 LOOP_UNTIL                                                                      
-    TERMINAL = 'LOOP_UNTIL'                                                     
     VALUE(CURRENT) #SEP . S 'UNTIL' BL ARB . COND BL RPOS(0)                    
     VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-UNTIL-PARA THRU '             
 +        FORLBL '-NEXTEXIT'                                                     
@@ -230,7 +223,6 @@ LOOP_UNTIL
 * PROCESS A NEXT STATEMENT                                             *        
 *----------------------------------------------------------------------*        
 LOOP_NEXT                                                                       
-    TERMINAL = 'LOOP_NEXT'                                                      
     VALUE(CURRENT) #SEP . S 'NEXT' #BL #VARID . A EOS                           
                                                                                 
     IDENT(A)                                     :F(DONEXT)                     
@@ -240,13 +232,11 @@ LOOP_NEXT
 * POP OFF THE NEXT LOOP INFO..                                         *        
 *----------------------------------------------------------------------*        
 DONEXT                                                                          
-    TERMINAL = 'DONEXT'                                                         
     LASTLOOP = POP()                  :($('NEXT_' TYPE(LASTLOOP)))              
 *----------------------------------------------------------------------*        
 * PROCESS THE SIMPLE FOR .. TO ..                                      *        
 *----------------------------------------------------------------------*        
 NEXT_FOR1                                                                       
-    TERMINAL = 'NEXT_FOR1'                                                      
     LAST = CURRENT                                                              
     NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
     CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
@@ -258,7 +248,6 @@ NEXT_FOR1
 * PROCESS THE FOR .. WHILE ..                                          *        
 *----------------------------------------------------------------------*        
 NEXT_FORW                                                                       
-    TERMINAL = 'NEXT_FORW'                                                      
     LAST = CURRENT                                                              
     NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
     CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
@@ -269,7 +258,6 @@ NEXT_FORW
 * PROCESS THE FOR .. UNTIL .. (CHECK AT BOTTOM OF LOOP)                *        
 *----------------------------------------------------------------------*        
 NEXT_FORU                                                                       
-    TERMINAL = 'NEXT_FORU'                                                      
     LAST = CURRENT                                                              
     NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
     CURRENT = INSERTB(CURRENT,'S','IF NOT ' COND ' THEN GOTO '                  
@@ -281,7 +269,6 @@ NEXT_FORU
 * PROCESS THE WHILE ..                                                 *        
 *----------------------------------------------------------------------*        
 NEXT_WHILE                                                                      
-    TERMINAL = 'NEXT_WHILE'                                                     
     LAST = CURRENT                                                              
     NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
     CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
@@ -292,7 +279,6 @@ NEXT_WHILE
 * PROCESS THE UNTIL                                                    *        
 *----------------------------------------------------------------------*        
 NEXT_UNTIL                                                                      
-    TERMINAL = 'NEXT_UNTIL'                                                     
     LAST = CURRENT                                                              
     NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
     CURRENT = INSERTB(CURRENT,'S','IF NOT ' COND ' THEN GOTO '                  
@@ -304,7 +290,6 @@ NEXT_UNTIL
 * DID WE GET THE PROPER NEXT CTLVAR ?                                  *        
 *----------------------------------------------------------------------*        
 GETNEXTNEXT                                                                     
-    TERMINAL = 'GETNEXTNEXT A=' A LASTLOOP                                      
     IDENT(A,CTLVAR(LASTLOOP))                    :F(DONEXT)                     
     NEXT(BOTTOM) =                                                              
 -EJECT                                                                          
@@ -313,10 +298,8 @@ GETNEXTNEXT
 *----------------------------------------------------------------------*        
 *-- GET THE NEXT STATEMENT                                                      
 NEXTLOOP                                                                        
-    TERMINAL = 'GETNEXTLOOP'                                                    
     CURRENT = GETNEXT()                          :S(MAINLOOP)                   
 -EJECT                                                                          
-    TERMINAL = 'GONE...'                                                        
 *----------------------------------------------------------------------*        
 * LOOK FOR NESTED IF STATEMENTS..                                      *        
 *----------------------------------------------------------------------*        

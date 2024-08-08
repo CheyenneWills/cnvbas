@@ -1,5 +1,5 @@
 -TITLE   CNVGRAPH                                                               
--NOEXECUTE                                                                      
+*-NOEXECUTE                                                                      
 *----------------------------------------------------------------------*        
 * PROCESS GOSUB AND RETURN STATEMENTS                                  *        
 *                                                                      *        
@@ -12,9 +12,8 @@
 *----------------------------------------------------------------------*        
     &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
     &STLIMIT = 900000                                                           
-    INPUT(.SOURCE,'SOURCE')                                                     
-    OUTPUT(.CODE,'CODE')                                                        
-    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    INPUT(.SOURCE,10,'cnvcode.tmp[L1000]')                                                     
+    OUTPUT(.CODE,11,'cnvcode2.tmp[L1000]')                                                        
     &DUMP = 1                                                                   
     &TRIM = 1                                                                   
     &ANCHOR = 1                                                                 
@@ -304,8 +303,6 @@ GENPERFORM
 GENLOOP                                                                         
     IDENT(TYPE(CURRENT),'C')                      :S(NEXTOUT)                   
     IDENT(BTYPE(CURRENT),.LEADER)                 :F(NOTLEADER)                 
-    OUTPUT = ' '                                                                
-    OUTPUT = '--- NEW BLOCK --'                                                 
     OUTPUT = '==>> REFERENCES BY <<=='                                          
     R = REF(CURRENT)                                                            
     R = CONVERT(R,'ARRAY')                       :F(NOTREFED)                   
