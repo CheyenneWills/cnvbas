@@ -1,0 +1,98 @@
+-TITLE   CNVFILES                                                               
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* FIND ALL OPEN STATEMENTS                                             *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - CONVERTOR INTERNAL FORMAT                           *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE - CONVERTOR INTERNAL FORMAT                             *        
+*  12  -  FILE - FILE TABLE                                            *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.FILE,'FILE')                                                        
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDFUNC                                                                         
+                                                                                
+    OPSYN('#','OPT',1)                                                          
+    BL = #SPAN(' ')                                                             
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    IDENTIFIER = ANY(AL) #SPAN(AL NU '._')                                      
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+*----------------------------------------------------------------------*        
+*  DEFINE THE OPEN STATEMENT                                           *        
+*----------------------------------------------------------------------*        
+    ENDOFOPT = BL (',' | RPOS(0))                                               
+    ORGOPT = 'ORGANIZATION' BL ('VIRTUAL' | 'UNDEFINED' | 'INDEXED' |           
++        'SEQUENTIAL' | 'RELATIVE') . ORG1 BL #('STREAM' | 'VARIABLE' |         
++        'FIXED') . ORG2 ENDOFOPT                                               
+    ACCOPT = 'ACCESS' BL ('APPEND' | 'READ' | 'WRITE' | 'MODIFY' |              
++        'SCRATCH') . ACC1 ENDOFOPT                                             
+    RECSOPT = 'RECORDSIZE' SPAN(' ') ARB . RECSZ ENDOFOPT                       
+    KEYOPT = 'PRIMARY' BL #('KEY' BL) ARB . KEY1 BL #'DUPLICATES' . KEY2        
++        ENDOFOPT                                                               
+    MAPOPT = 'MAP' BL VARID . MAPNM ENDOFOPT                                    
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS AN OPEN STATEMENT:                                           *        
+* OPEN <NAME> FOR <INPUT|OUTPUT> AS <NUMBER> <,OPTION <,OPTION ...>>   *        
+*----------------------------------------------------------------------*        
+READ                                                                            
+    LINE = SOURCE                                :F(END)                        
+    LINE BREAK(';') ';' BREAK(';') . TYPE ';' REM . DATA                        
++                                                :($('PROC_' TYPE))             
+PROC_C                                                                          
+PROC_L                                                                          
+PUN                                                                             
+    CODE = LINE                                  :(READ)                        
+                                                                                
+PROC_S                                                                          
+    DATA #SEP BL 'OPEN'                          :F(PUN)                        
+    DATA #SEP BL 'OPEN' BL ARB . FID BL 'FOR' BL BREAK(' ') . INOUT =           
+    DATA BL 'AS' BL #'FILE' BL '#' #BL (BREAK('% ,') | REM) . FNUM              
++        #('%') #BL ENDOFOPT =                                                  
+*----------------------------------------------------------------------*        
+* NOW GET ALL THE OPTIONS FROM THE LINE..                              *        
+*----------------------------------------------------------------------*        
+OPENOPT                                                                         
+    ORG1 =; ORG2 =; ACC1 =; RECSZ =; KEY1 =; KEY2 =; MAPNM =;                   
+    &ANCHOR = 0                                                                 
+    DATA ORGOPT                                                                 
+    DATA ACCOPT                                                                 
+    DATA RECSOPT                                                                
+    DATA KEYOPT                                                                 
+    DATA MAPOPT                                                                 
+    &ANCHOR = 1                                                                 
+*----------------------------------------------------------------------*        
+* WE NOW HAVE ALL THE OPTIONS FROM THE OPEN (I THINK..)                *        
+* SO CREATE A FILE ENTRY AND REPLACE THE OPEN STATEMENT.               *        
+*----------------------------------------------------------------------*        
+GOTOPEN                                                                         
+    ORG = ORG1 '.' ORG2                                                         
+    KEY = KEY1 '.' KEY2                                                         
+    ORG = IDENT(ORG,'.')                                                        
+    KEY = IDENT(KEY,'.')                                                        
+    FILE = FID ';' FNUM ';' INOUT ';' ORG ';' ACC1 ';' RECSZ ';' KEY            
++   ';' MAPNM                                                                   
+    &ANCHOR = 0                                                                 
+    FNUM #BL '#' #BL =                                                          
+    LINE 'OPEN' REM = 'OPEN ' INOUT ' FILE-' FNUM                               
+    &ANCHOR = 1                                    :(PUN)                       
+END                                                                             

@@ -1,0 +1,367 @@
+ /* Basic to Cobol pretty printer */                                    00010000
+ /**********************************************************************00020000
+ *                                                                     *00030000
+ *  NAME        - CNVPRETT                                             *00040000
+ *                                                                     *00050000
+ *  SYNOPSIS    - Takes as input the output from the                   *00060000
+ *                basic to cobol convertor and                         *00070000
+ *                Generates cobol formated output                      *00080000
+ *                                                                     *00090000
+ *  DESCRIPTION - Pretty prints the output of the BASIC convertor      *00100000
+ *                                                                     *00110000
+ *  RETURNS -     CNVGEN CODE    formated according to COBOL standards *00120000
+ *                                                                     *00130000
+ *  CAUTIONS -    <any warnings>                                       *00140000
+ *                                                                     *00150000
+ *  Notes/Operation <Detailed description>                             *00160000
+ *                                                                     *00170000
+ *                                                                      00180000
+ *********************************************************************/ 00190000
+ Cnvprett: proc options(main);                                          00200000
+ Dcl fin file record input;                                             00210000
+ Dcl fout file record output env( v recsize(80) );                      00220000
+ Dcl rec char(2000) varying;                                            00230000
+ Dcl out char(2000) varying;                                            00240000
+ Dcl lvl char(80) varying;                                              00250000
+ Dcl name char(80) varying;                                             00260000
+ Dcl def char(500) varying;                                             00270000
+ Dcl splitpos fixed bin;                                                00280000
+ Dcl eof bit(1) init('0'b);                                             00290000
+ Dcl indent fixed bin;                                                  00300000
+ Dcl blanks char(80) varying init(' ');                                 00310000
+ Dcl inpd bit(1);                                                       00320000
+                                                                        00330000
+ On endfile(fin) eof = '1'b;                                            00340000
+                                                                        00350000
+ Open file(fin) input;                                                  00360000
+ Open file(fout) output;                                                00370000
+                                                                        00380000
+ indent = 0;                         /* Current indent level */         00390000
+ inpd = '0'b;  /* Set on when we are in the procedure division */       00400000
+ rec = '';                                                              00410000
+ read file(fin) into(rec);                                              00420000
+ Do while (^eof);                                                       00430000
+    If indent < 0 Then indent = 0;                                      00440000
+    rec = STRIP(rec);         /* Remove leading and trailing blanks*/   00450000
+    Select;                                                             00460000
+        When (inpd & VERIFY(rec,'0123456789-') > 1) Do;                 00470000
+            /* Process a label */                                       00480000
+            indent = 0; /* Reset the indent level back to zero */       00490000
+            rec = DUPL(' ',7) || rec;                                   00500000
+            Write file(fout) from(blanks);                              00510000
+            Write file(fout) from(rec);                                 00520000
+            Write file(fout) from(blanks);                              00530000
+        End;                                                            00540000
+        When (SUBSTR(rec,1,1) = '*') Do;                                00550000
+            /* Process a comment */                                     00560000
+            Do While(LENGTH(rec) > 71);                                 00570000
+                /* Process a long comment */                            00580000
+                splitpos = SPLIT(rec,71,' ');                           00590000
+                out = SUBSTR(rec,1,splitpos);                           00600000
+                rec = SUBSTR(rec,splitpos+1);                           00610000
+                out = DUPL(' ',6) || out;                               00620000
+                write file(fout) from(out);                             00630000
+                rec = '* ' || rec;                                      00640000
+            End;                                                        00650000
+            rec = DUPL(' ',6) || rec;                                   00660000
+            write file(fout) from(rec);                                 00670000
+        End;                                                            00680000
+        When (rec = 'IDENTIFICATION DIVISION.' |                        00690000
+         rec = 'ENVIRONMENT DIVISION.' |                                00700000
+         rec = 'DATA DIVISION.' |                                       00710000
+         rec = 'PROCEDURE DIVISION.') Do;                               00720000
+            /* Process the different divisions */                       00730000
+            If rec = 'PROCEDURE DIVISION.' Then inpd = '1'b;            00740000
+            indent = 0;                                                 00750000
+            rec = DUPL(' ',7) || rec;                                   00760000
+            write file(fout) from(rec);                                 00770000
+        End;                                                            00780000
+        When (rec = 'CONFIGURATION SECTION.' |                          00790000
+         rec = 'INPUT-OUTPUT SECTION.' |                                00800000
+         rec = 'FILE SECTION.' |                                        00810000
+         rec = 'WORKING-STORAGE SECTION.' |                             00820000
+         rec = 'LINKAGE SECTION.') Do;                                  00830000
+            /* Process the different sections */                        00840000
+            indent = 0;                                                 00850000
+            rec = DUPL(' ',7) || rec;                                   00860000
+            write file(fout) from(rec);                                 00870000
+        End;                                                            00880000
+        When (word(rec) = 'PROGRAM-ID.' |                               00890000
+             word(rec) = 'AUTHOR.' |                                    00900000
+             word(rec) = 'INSTALLATION.' |                              00910000
+             word(rec) = 'DATE-WRITTEN.' |                              00920000
+             word(rec) = 'DATE-COMPILED.' |                             00930000
+             word(rec) = 'SOURCE-COMPUTER.' |                           00940000
+             word(rec) = 'OBJECT-COMPUTER.' |                           00950000
+             word(rec) = 'FILE-CONTROL.') Do;                           00960000
+            indent = 0;                                                 00970000
+            rec = DUPL(' ',7) || rec;                                   00980000
+            write file(fout) from(rec);                                 00990000
+        End;                                                            01000000
+        When (^inpd & verify(word(rec),'0123456789') = 0) Do;           01010000
+            /* Process a data definition */                             01020000
+            def = rec;                                                  01030000
+            lvl = token(def);                                           01040000
+            def = strip(def);                                           01050000
+            name = token(def);                                          01060000
+            def = strip(def);                                           01070000
+            Select;                                                     01080000
+                /* Get the indentation for this level        */         01090000
+                /* Since the convertor generates 01, 02, and 03 */      01100000
+                /* We should be safe with the following      */         01110000
+                When (lvl = '01') indent = 0;                           01120000
+                When (lvl = '02') indent = 1;                           01130000
+                When (lvl = '03') indent = 2;                           01140000
+                Otherwise indent = 3;                                   01150000
+            End;                                                        01160000
+            If indent = 0 Then out = DUPL(' ',7) || lvl || '  ';        01170000
+            Else out = DUPL(' ',11 + (indent-1) * 4) || lvl || ' ';     01180000
+            out = out || name;                                          01190000
+            def = STRIP(def);                                           01200000
+            If def = '.' Then out = out || ' .';                        01210000
+            Else If WORD(def) = 'REDEFINES' Then out = out || def;      01220000
+            Else If WORD(def) = 'PIC' Then Do;                          01230000
+                /* Align the PIC statements on column 40     */         01240000
+                picpos = 40 - LENGTH(out) - 1;                          01250000
+                If picpos > 0 Then out = out || DUPL(' ',picpos) || def;01260000
+                Else out = out || ' ' || def;                           01270000
+            End;                                                        01280000
+            Else out = out || def;                                      01290000
+            /* I'm not sure if the length will ever exceed 71*/         01300000
+            /* if it should, the fix would go here.          */         01310000
+            If LENGTH(out) > 71 Then Do;                                01320000
+                display(                                                01330000
+          'Data definition greater than 71 (' || LENGTH(out) ||')');    01340000
+                display(out);                                           01350000
+            End;                                                        01360000
+            write file(fout) from(out);                                 01370000
+        End;                                                            01380000
+        When (^inpd & (WORD(rec) = 'FD' |                               01390000
+         WORD(rec) = 'SD')) Do;                                         01400000
+            /* Process a file definition */                             01410000
+            def = rec;                                                  01420000
+            lvl = token(def);                                           01430000
+            def = strip(def);                                           01440000
+            indent = 1;                                                 01450000
+            out = DUPL(' ',7) || lvl || '  ' || def;                    01460000
+            write file(fout) from(out);                                 01470000
+        End;                                                            01480000
+        When (SUBSTR(rec,1,7) = '======*')                              01490000
+            Call PUTREC('======*',Substr(rec,8));                       01500000
+        Otherwise Call PUTREC('       ',rec);                           01510000
+    End;                                                                01520000
+    out = '';                                                           01530000
+    rec = '';                                                           01540000
+    read file(fin) into(rec);                                           01550000
+ End;                                                                   01560000
+ close file(fin);                                                       01570000
+ close file(fout);                                                      01580000
+                                                                        01590000
+ putrec: procedure(prefix,rec);                                         01600000
+ dcl prefix char(7);                                                    01610000
+ dcl rec char(2000) varying;                                            01620000
+ dcl out1 char(80) varying;                                             01630000
+ dcl out char(1000) varying;                                            01640000
+ dcl splitpos fixed bin;                                                01650000
+ rec = STRIP(rec);                                                      01660000
+ Select;                                                                01670000
+    When (inpd & WORD(rec) = 'IF') Do;                                  01680000
+        /* Process an IF statement */                                   01690000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              01700000
+        Do While(LENGTH(out) > 71);                                     01710000
+            splitpos = SPLIT(out,71,'(, *+/');                          01720000
+            out1 = SUBSTR(out,1,splitpos);                              01730000
+            out =  SUBSTR(out,splitpos+1);                              01740000
+            write file(fout) from(out1);                                01750000
+            out = STRIP(out);                                           01760000
+            out = prefix || DUPL(' ',5 + (indent * 4)) || out;          01770000
+        End;                                                            01780000
+        write file(fout) from(out);                                     01790000
+        indent = indent + 1;                                            01800000
+    End;                                                                01810000
+    When (inpd & WORD(rec) = 'THEN') Do;                                01820000
+        /* Process an THEN statement (a special case of IF)  */         01830000
+        indent = indent - 1;                                            01840000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              01850000
+        Do While (LENGTH(out) > 71);                                    01860000
+            splitpos = SPLIT(out,71,'(, *+/');                          01870000
+            out1 = SUBSTR(out,1,splitpos);                              01880000
+            out =  SUBSTR(out,splitpos+1);                              01890000
+            write file(fout) from(out1);                                01900000
+            out = STRIP(out);                                           01910000
+            out = prefix || DUPL(' ',5 + (indent * 4)) || out;          01920000
+        End;                                                            01930000
+        write file(fout) from(out);                                     01940000
+        indent = indent + 1;                                            01950000
+    End;                                                                01960000
+    When (inpd & WORD(rec) = 'ELSE') Do;                                01970000
+        /* Process an ELSE statement */                                 01980000
+        indent = indent - 1;                                            01990000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              02000000
+        Do While (LENGTH(out) > 71);                                    02010000
+            splitpos = SPLIT(out,71,'(, *+/');                          02020000
+            out1 = SUBSTR(out,1,splitpos);                              02030000
+            out =  SUBSTR(out,splitpos+1);                              02040000
+            write file(fout) from(out1);                                02050000
+            out = STRIP(out);                                           02060000
+            out = prefix || DUPL(' ',5 + (indent * 4)) || out;          02070000
+        End;                                                            02080000
+        write file(fout) from(out);                                     02090000
+        indent = indent + 1;                                            02100000
+    End;                                                                02110000
+    When (inpd & rec = '.') Do;                                         02120000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              02130000
+        write file(fout) from(out);                                     02140000
+        indent = 0;                                                     02150000
+    End;                                                                02160000
+    When (inpd & WORD(rec) = 'PERFORM' &                                02170000
+         INDEX(rec,'WITH TEST') ^= 0 & INDEX(rec,' THRU ') = 0) Do;     02180000
+        /* Process a PERFORM statement */                               02190000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              02200000
+        Do While (LENGTH(out) > 71);                                    02210000
+            splitpos = SPLIT(out,71,'(, *+/');                          02220000
+            out1 = SUBSTR(out,1,splitpos);                              02230000
+            out =  SUBSTR(out,splitpos+1);                              02240000
+            write file(fout) from(out1);                                02250000
+            out = STRIP(out);                                           02260000
+            out = prefix || DUPL(' ',5 + (indent * 4)) || out;          02270000
+        End;                                                            02280000
+        write file(fout) from(out);                                     02290000
+        indent = indent + 1;                                            02300000
+    End;                                                                02310000
+    When (inpd & substr(rec,1,4) = 'END-') Do;                          02320000
+        /* Process an END- something statement */                       02330000
+        indent = indent - 1;                                            02340000
+        if indent < 0 then indent = 0;                                  02350000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              02360000
+        Do While(LENGTH(out) > 71);                                     02370000
+            splitpos = SPLIT(out,71,'(, *+/');                          02380000
+            out1 = SUBSTR(out,1,splitpos);                              02390000
+            out =  SUBSTR(out,splitpos+1);                              02400000
+            write file(fout) from(out1);                                02410000
+            out = STRIP(out);                                           02420000
+            out = prefix || DUPL(' ',5 + (indent * 4)) || out;          02430000
+        End;                                                            02440000
+        write file(fout) from(out);                                     02450000
+    End;                                                                02460000
+    Otherwise Do;                                                       02470000
+        out = prefix || DUPL(' ',4 + (indent * 4)) || rec;              02480000
+        Do While(LENGTH(out) > 71);                                     02490000
+           splitpos = SPLIT(out,71,'(, *+/;');                          02500000
+            If splitpos <= (12 + (indent * 4)) Then Do;                 02510000
+            /* Have to continue the current line onto the next line */  02520000
+                out1 = substr(out,1,72);                                02530000
+                out = substr(out,73);                                   02540000
+                write file(fout) from(out1);                            02550000
+                If prefix = '       ' Then                              02560000
+                    out = dupl(' ',6) || '-' || out;                    02570000
+                Else                                                    02580000
+                    out = dupl('-',6) || '*' || out;                    02590000
+            End;                                                        02600000
+            Else Do;                                                    02610000
+                out1 = substr(out,1,splitpos);                          02620000
+                out = substr(out,splitpos+1);                           02630000
+                write file(fout) from(out1);                            02640000
+                out = STRIP(out);                                       02650000
+                out = prefix || DUPL(' ',5 + (indent * 4)) || out;      02660000
+            End;                                                        02670000
+        End;                                                            02680000
+        If SUBSTR(out,LENGTH(out),1) = '.' Then indent = 0;             02690000
+        write file(fout) from(out);                                     02700000
+    End;                                                                02710000
+ End;                                                                   02720000
+ Return;                                                                02730000
+ End;                                                                   02740000
+ word:proc(a) returns(char(80) varying);                                02750000
+ dcl a char(*) varying;                                                 02760000
+ dcl s char(100) varying;                                               02770000
+ dcl r char(80) varying;                                                02780000
+     s = a;                                                             02790000
+     r = token(s);                                                      02800000
+     return(r);                                                         02810000
+ end;                                                                   02820000
+ token:proc(string) returns(char(2000) varying);                        02830000
+ dcl string char(*) varying;                                            02840000
+ dcl i fixed bin;                                                       02850000
+ dcl out char(2000) varying;                                            02860000
+ /* first trim off leading and trailing blanks */                       02870000
+ string = strip(string);                                                02880000
+ do i = 1 to length(string) while( substr(string,i,1) ^= ' ' );         02890000
+ end;                                                                   02900000
+ if i = length(string) then out = string;                               02910000
+ else out = substr(string,1,i-1);                                       02920000
+ if i = length(string) then string = '';                                02930000
+ else string = substr(string,i);                                        02940000
+ return(out);                                                           02950000
+ end;                                                                   02960000
+ Split: Procedure(line,lastpos,break) returns(fixed bin);               02970000
+ dcl line char(*) varying;                                              02980000
+ dcl lastpos fixed binary;                                              02990000
+ dcl break char(*);                                                     03000000
+ dcl mark fixed bin;                                                    03010000
+ dcl quote bit(1);                                                      03020000
+ dcl len fixed bin;                                                     03030000
+ dcl c char(1);                                                         03040000
+ dcl i fixed bin;                                                       03050000
+ mark = 0;                                                              03060000
+ quote = '0'b;                                                          03070000
+ len = min(length(line),lastpos-1);                                     03080000
+ Do i = 1 to len;                                                       03090000
+    c = SUBSTR(line,i,1);                                               03100000
+    Select;                                                             03110000
+        When (c = '''') Do;                                             03120000
+            /* Process quote */                                         03130000
+            Select;                                                     03140000
+                When (quote & SUBSTR(line,i,2) = '''''') Do;            03150000
+                /* Skip over imbedded quotes */                         03160000
+                    i = i + 1;                                          03170000
+                    go to next;                                         03180000
+                End;                                                    03190000
+                When (quote)  Do;                                       03200000
+                /* Exit a quote */                                      03210000
+                    quote = '0'b;                                       03220000
+                    If i+1 <= len Then mark = i + 1;                    03230000
+                End;                                                    03240000
+                Otherwise Do;                                           03250000
+                    /* Indicate that we are within a quote */           03260000
+                    quote = '1'b;                                       03270000
+                    mark = i-1;                                         03280000
+                End;                                                    03290000
+            End;                                                        03300000
+        End;                                                            03310000
+        When (^quote & INDEX(break,c) ^= 0) mark = i;                   03320000
+        Otherwise;                                                      03330000
+    End;                                                                03340000
+ next:                                                                  03350000
+ End;                                                                   03360000
+ return(mark);                                                          03370000
+ End;                                                                   03380000
+ Dupl: Procedure(s,i) returns(char(80) varying);                        03390000
+ dcl s char(*);                                                         03400000
+ dcl i fixed bin;                                                       03410000
+ dcl ns char(80) varying;                                               03420000
+ ns = '';                                                               03430000
+ Do j = 1 By 1 While(j <= i);                                           03440000
+     ns = ns || s;                                                      03450000
+ End;                                                                   03460000
+ return(ns);                                                            03470000
+ end;                                                                   03480000
+ strip:proc(a) returns(char(2000) varying);                             03490000
+  dcl a char(*) varying;                                                03500000
+  return( trim(rtrim(a)) );                                             03510000
+ end;                                                                   03520000
+ trim:proc(a) returns(char(2000) varying);                              03530000
+  dcl a char(*) varying;                                                03540000
+  dcl (i,j) fixed bin;                                                  03550000
+  do i=length(a) to 1 by -1 while(substr(a,i,1)=' ');                   03560000
+  end;                                                                  03570000
+  return(substr(a,1,i));                                                03580000
+ end;                                                                   03590000
+ rtrim:proc(a) returns(char(2000) varying);                             03600000
+  dcl a char(*) varying;                                                03610000
+  dcl (i,j) fixed bin;                                                  03620000
+  do i=1 to length(a) while(substr(a,i,1)=' ');                         03630000
+  end;                                                                  03640000
+  return(substr(a,i));                                                  03650000
+ end;                                                                   03660000
+ end;                                                                   03670000

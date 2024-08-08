@@ -1,0 +1,369 @@
+-TITLE   CNVLOOP                                                                
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* PROCESS LOOP CONSTRUCTS AND NESTED IFS                               *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE INTERNAL FORMAT          RECFM=F LRECL=500            *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+                                                                                
+    DATA('TEXT(TYPE,VALUE,NEST,FLAG,NEXT)')                                     
+    DATA('LOOPINFO(TYPE,CTLVAR,LBL,PERFORMER,FIRST,COND)')                      
+                                                                                
+    DEFINE('PUSH(X)')                                                           
+    DEFINE('POP()')                                                             
+    DEFINE('TOP()')                                                             
+    DATA('LINK(NEXT,VALUE)')                     :(PUSH_END)                    
+PUSH PUSH_POP = LINK(PUSH_POP,X)                                                
+    PUSH = .VALUE(PUSH_POP)                      :(NRETURN)                     
+POP IDENT(PUSH_POP)                              :S(FRETURN)                    
+    POP = VALUE(PUSH_POP)                                                       
+    PUSH_POP = NEXT(PUSH_POP)                    :(RETURN)                      
+TOP IDENT(PUSH_POP)                              :S(FRETURN)                    
+    TOP = .VALUE(PUSH_POP)                       :(NRETURN)                     
+PUSH_END                                                                        
+                                                                                
+    DEFINE('INSERT(C,T,V)N')                                                    
+    DEFINE('INSERTB(C,T,V)N')                                                   
+    DEFINE('GETNEXT(C)N')                                                       
+    DEFINE('GETTEXT()IN,L,T,V,F')                :(GETTEXT_END)                 
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT STATEMENT OR LABEL                                   *        
+*----------------------------------------------------------------------*        
+GETNEXT                                                                         
+    C = IDENT(C) CURRENT                                                        
+    TERMINAL = C                                                                
+    N = C                                                                       
+    IDENT(C)                                     :S(FRETURN)                    
+GETNEXTL                                                                        
+    N = NEXT(N)                                                                 
+    IDENT(N)                                     :S(FRETURN)                    
+    IDENT(TYPE(N),'C')                           :S(GETNEXTL)                   
+    GETNEXT = N                                  :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . F ';' BREAK(';') . L ';' BREAK(';') . T ';' REM . V         
+    GETTEXT = TEXT(T,V,L,F,NULL)                 :(RETURN)                      
+GETTEXT_END                                                                     
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+DECR $VAR = $VAR - 1                                                            
+    DECR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE AFTER C                                                *        
+*----------------------------------------------------------------------*        
+INSERT                                                                          
+    N = COPY(C)                                                                 
+    TYPE(N) = T                                                                 
+    VALUE(N) = V                                                                
+    NEST(N) = NEST(C)                                                           
+    NEST(N) = IDENT(T,'L') 0                                                    
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERT = N                                   :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE BEFORE C                                               *        
+*----------------------------------------------------------------------*        
+INSERTB                                                                         
+    N = COPY(C)                                                                 
+    TYPE(C) = T                                                                 
+    VALUE(C) = V                                                                
+    NEST(C) = IDENT(T,'L') 0                                                    
+    NEST(N) = NEST(C)                                                           
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERTB = N                                  :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    BL = SPAN(' ')                                                              
+    EOS = #BL RPOS(0)                                                           
+    RELOP = '==' | '<>' | '><' | '<=' | '>=' | '^=' | '=' | '>' | '<'           
+    IDENTIFIER = ANY(AL) (SPAN(AL NU '._') | '')                                
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+    INTLIT =  #'-' SPAN(NU) '%'                                                 
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+                                                                                
+    ARRAY1REF = (INTID | INTLIT | SPAN(NU)) #BL                                 
+    ARRAY2REF = #BL ARRAY1REF #(',' ARRAY2REF)                                  
+    ARRAY3REF = #BL '(' BAL #ARRAY2REF #BL ')'                                  
+                                                                                
+    STRIDREF = STRID #ARRAY3REF                                                 
+    ASGN1PAT = VARID #ARRAY3REF                                                 
+    ASGN2PAT = (VARID #ARRAY3REF) | NUMLIT                                      
+    ASGN3PAT = ASGN1PAT #(#BL ',' #BL *ASGN3PAT)                                
+*----------------------------------------------------------------------*        
+* DEFINE WHAT AN EXPRESSION IS..                                       *        
+*----------------------------------------------------------------------*        
+    EXP = ARB #NOTANY('$') ARB ANY("+-*/^()") ARB #NOTANY('$')                  
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE CODE..                                                   *        
+*----------------------------------------------------------------------*        
+    HEAD = GETTEXT()                                                            
+    CURRENT = HEAD                                                              
+READLOOP                                                                        
+    NEXT(CURRENT) = GETTEXT()                    :F(ENDREAD)                    
+    CURRENT = NEXT(CURRENT)                      :(READLOOP)                    
+ENDREAD                                                                         
+    BOTTOM = INSERT(CURRENT,'C','I;THE FOLLOWING IS INSERTED CODE')             
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* LOOK FOR "FOR WHILE UNTIL AND NEXT" STATEMENTS                       *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT(CURRENT)                         
+    FORLBL = 0                                                                  
+MAINLOOP                                                                        
+    TERMINAL = 'MAINLOOP'                                                       
+    IDENT(TYPE(CURRENT),'L')                     :S(NEXTLOOP)                   
+    VALUE(CURRENT) #SEP ('FOR' | 'WHILE' | 'UNTIL' | 'NEXT') . TYPE             
++                           :F(NEXTLOOP)S($('LOOP_' TYPE))                      
+*----------------------------------------------------------------------*        
+* PROCESS FOR STATEMENTS..                                             *        
+*----------------------------------------------------------------------*        
+LOOP_FOR                                                                        
+    TERMINAL = 'LOOP_FOR'                                                       
+    LINE = VALUE(CURRENT)                                                       
+*----------------------------------------------------------------------*        
+* TWO FORMS OF FOR                                                     *        
+*----------------------------------------------------------------------*        
+    LINE #SEP . S 'FOR' BL VARID . A #BL '=' #BL ARB . B BL 'TO' BL             
++       ARB . TO #BL #('STEP' BL REM) . STEP RPOS(0) :S(FOR1)                   
+                                                                                
+    LINE #SEP . S 'FOR' BL VARID . A #BL '=' #BL ARB . B #(BL 'STEP' BL         
++   ARB) . STEP BL ('WHILE' | 'UNTIL') . T BL REM . COND :S($('FOR_' T))        
+    FLAG(CURRENT) = 'F'                          :(NEXTLOOP)                    
+*----------------------------------------------------------------------*        
+* PROCESS A UNCONDITIONAL FOR STATEMENT                                *        
+*----------------------------------------------------------------------*        
+FOR1                                                                            
+    BYSTEP = '1'                                                                
+    STEP 'STEP' BL REM . BYSTEP                                                 
+    VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-FOR-PARA THRU '               
++        FORLBL '-NEXTEXIT VARYING ' A ' FROM ' B ' BY ' BYSTEP                 
++        ' UNTIL ' A ' = ' TO                                                   
+    LABELTEXT = INSERT(CURRENT,'L',FORLBL '-FOR-PARA')                          
+    PUSH(LOOPINFO('FOR1',A,FORLBL,CURRENT,LABELTEXT)) :(NEXTLOOP)               
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS A CONDITIONAL STATEMENT                                      *        
+*----------------------------------------------------------------------*        
+FOR_WHILE                                                                       
+    BYSTEP =  '1'                                                               
+    STEP 'STEP' BL REM . BYSTEP                                                 
+    VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-FOR-PARA THRU '               
++        FORLBL '-NEXTEXIT VARYING ' A ' FROM ' B ' BY ' BYSTEP                 
++        ' UNTIL ' COND                                                         
+    LABELTEXT = INSERT(CURRENT,'L',FORLBL '-FOR-PARA')                          
+    PUSH(LOOPINFO('FORW',A,FORLBL,CURRENT,LABELTEXT)) :(NEXTLOOP)               
+FOR_UNTIL                                                                       
+    BYSTEP = '1'                                                                
+    STEP 'STEP' BL REM . BYSTEP                                                 
+    VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-FOR-PARA THRU '               
++        FORLBL '-NEXTEXIT VARYING ' A ' FROM ' B ' BY ' BYSTEP                 
+    LABELTEXT = INSERT(CURRENT,'L',FORLBL '-FOR-PARA')                          
+    PUSH(LOOPINFO('FORU',A,FORLBL,CURRENT,LABELTEXT,COND)) :(NEXTLOOP)          
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS THE FILE STATEMENT                                           *        
+*----------------------------------------------------------------------*        
+LOOP_WHILE                                                                      
+    TERMINAL = 'LOOP_WHILE'                                                     
+    VALUE(CURRENT) #SEP . S 'WHILE' BL REM . COND                               
+    COND = TRIM(COND)                                                           
+    VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-WHILE-PARA THRU '             
++        FORLBL '-NEXTEXIT UNTIL ' COND                                         
+    LABELTEXT = INSERT(CURRENT,'L',FORLBL '-WHILE-PARA')                        
+    PUSH(LOOPINFO('WHILE',,FORLBL,CURRENT,LABELTEXT)) :(NEXTLOOP)               
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS THE UNTIL STATEMENT                                          *        
+*----------------------------------------------------------------------*        
+LOOP_UNTIL                                                                      
+    TERMINAL = 'LOOP_UNTIL'                                                     
+    VALUE(CURRENT) #SEP . S 'UNTIL' BL ARB . COND BL RPOS(0)                    
+    VALUE(CURRENT) = S 'PERFORM ' INCR(.FORLBL) '-UNTIL-PARA THRU '             
++        FORLBL '-NEXTEXIT'                                                     
+    LABELTEXT = INSERT(CURRENT,'L',FORLBL '-WHILE-PARA')                        
+    PUSH(LOOPINFO('UNTIL',,FORLBL,CURRENT,LABELTEXT,COND)) :(NEXTLOOP)          
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS A NEXT STATEMENT                                             *        
+*----------------------------------------------------------------------*        
+LOOP_NEXT                                                                       
+    TERMINAL = 'LOOP_NEXT'                                                      
+    VALUE(CURRENT) #SEP . S 'NEXT' #BL #VARID . A EOS                           
+                                                                                
+    IDENT(A)                                     :F(DONEXT)                     
+    X = TOP()                                                                   
+    A = CTLVAR(X)                                                               
+*----------------------------------------------------------------------*        
+* POP OFF THE NEXT LOOP INFO..                                         *        
+*----------------------------------------------------------------------*        
+DONEXT                                                                          
+    TERMINAL = 'DONEXT'                                                         
+    LASTLOOP = POP()                  :($('NEXT_' TYPE(LASTLOOP)))              
+*----------------------------------------------------------------------*        
+* PROCESS THE SIMPLE FOR .. TO ..                                      *        
+*----------------------------------------------------------------------*        
+NEXT_FOR1                                                                       
+    TERMINAL = 'NEXT_FOR1'                                                      
+    LAST = CURRENT                                                              
+    NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
+    CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
+    NEXT(LAST) =                                                                
+    NEXT(BOTTOM) = FIRST(LASTLOOP)                                              
+    BOTTOM = LAST                                  :(GETNEXTNEXT)               
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS THE FOR .. WHILE ..                                          *        
+*----------------------------------------------------------------------*        
+NEXT_FORW                                                                       
+    TERMINAL = 'NEXT_FORW'                                                      
+    LAST = CURRENT                                                              
+    NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
+    CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
+    NEXT(LAST) =                                                                
+    NEXT(BOTTOM) = FIRST(LASTLOOP)                                              
+    BOTTOM = LAST                                  :(GETNEXTNEXT)               
+*----------------------------------------------------------------------*        
+* PROCESS THE FOR .. UNTIL .. (CHECK AT BOTTOM OF LOOP)                *        
+*----------------------------------------------------------------------*        
+NEXT_FORU                                                                       
+    TERMINAL = 'NEXT_FORU'                                                      
+    LAST = CURRENT                                                              
+    NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
+    CURRENT = INSERTB(CURRENT,'S','IF NOT ' COND ' THEN GOTO '                  
++               LBL(LASTLOOP) '-FOR-PARA')                                      
+    NEXT(BOTTOM) = FIRST(LASTLOOP)                                              
+    NEXT(LAST) =                                                                
+    BOTTOM = INSERT(LAST,'L',LBL(LASTLOOP) '-NEXTEXIT') :(GETNEXTNEXT)          
+*----------------------------------------------------------------------*        
+* PROCESS THE WHILE ..                                                 *        
+*----------------------------------------------------------------------*        
+NEXT_WHILE                                                                      
+    TERMINAL = 'NEXT_WHILE'                                                     
+    LAST = CURRENT                                                              
+    NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
+    CURRENT = INSERTB(CURRENT,'L',LBL(LASTLOOP) '-NEXTEXIT')                    
+    NEXT(LAST) =                                                                
+    NEXT(BOTTOM) = FIRST(LASTLOOP)                                              
+    BOTTOM = LAST                                  :(GETNEXTNEXT)               
+*----------------------------------------------------------------------*        
+* PROCESS THE UNTIL                                                    *        
+*----------------------------------------------------------------------*        
+NEXT_UNTIL                                                                      
+    TERMINAL = 'NEXT_UNTIL'                                                     
+    LAST = CURRENT                                                              
+    NEXT( PERFORMER(LASTLOOP) ) = NEXT(CURRENT)                                 
+    CURRENT = INSERTB(CURRENT,'S','IF NOT ' COND ' THEN GOTO '                  
++               LBL(LASTLOOP) '-UNTIL-PARA')                                    
+    NEXT(BOTTOM) = FIRST(LASTLOOP)                                              
+    NEXT(LAST) =                                                                
+    BOTTOM = INSERT(LAST,'L',LBL(LASTLOOP) '-NEXTEXIT') :(GETNEXTNEXT)          
+*----------------------------------------------------------------------*        
+* DID WE GET THE PROPER NEXT CTLVAR ?                                  *        
+*----------------------------------------------------------------------*        
+GETNEXTNEXT                                                                     
+    TERMINAL = 'GETNEXTNEXT A=' A LASTLOOP                                      
+    IDENT(A,CTLVAR(LASTLOOP))                    :F(DONEXT)                     
+    NEXT(BOTTOM) =                                                              
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* GET THE NEXT STATEMENT IN THE STREAM                                 *        
+*----------------------------------------------------------------------*        
+*-- GET THE NEXT STATEMENT                                                      
+NEXTLOOP                                                                        
+    TERMINAL = 'GETNEXTLOOP'                                                    
+    CURRENT = GETNEXT()                          :S(MAINLOOP)                   
+-EJECT                                                                          
+    TERMINAL = 'GONE...'                                                        
+*----------------------------------------------------------------------*        
+* LOOK FOR NESTED IF STATEMENTS..                                      *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT(CURRENT)                         
+    PUSH_POP =                                                                  
+    LASTLVL = -1                                                                
+IFLOOP                                                                          
+    VALUE(CURRENT) #SEP 'IF' BL                  :F(TRYENDIF)                   
+    PUSH(CURRENT)                                                               
+    PUSH(LASTLVL)                                                               
+    LASTLVL = NEST(CURRENT)                      :(NEXTIF)                      
+TRYENDIF                                                                        
+    LT(LASTLVL,NEST(CURRENT))                    :S(NEXTIF)                     
+*- CHECK FOR AN ENDIF                                                           
+    VALUE(CURRENT) #SEP 'END' BL 'IF'            :F(NOENDIF)                    
+    EQ(LASTLVL,0)                                :S(NOENDIF)                    
+    LASTLVL = POP()                                                             
+    FIRST = POP()                                                               
+                                                                                
+    FIR = FIRST                                                                 
+    FIRST = INSERTB(FIRST,"S",SEP 'PERFORM ' INCR(.IFLBL)                       
++    '-IF-PARA THRU ' IFLBL '-ENDIF-PARA')                                      
+    NEXT(FIR) = NEXT(CURRENT)                                                   
+    BOTTOM = INSERT(BOTTOM,"L",IFLBL '-IF-PARA')                                
+    NEXT(BOTTOM) = FIRST                                                        
+    BOTTOM = CURRENT                                                            
+    NEXT(CURRENT) =                                                             
+    VALUE(CURRENT) = IFLBL '-ENDIF-PARA'                                        
+    NEST(CURRENT) = 0                                                           
+    TYPE(CURRENT) = "L"                                                         
+    CURRENT = FIR                                :(NEXTIF)                      
+NOENDIF                                                                         
+    LASTLVL = POP()                              :F(NEXTIF)                     
+    POP()                                                                       
+    EQ(LASTLVL,NEST(CURRENT))                    :F(NOENDIF)                    
+NEXTIF                                                                          
+    CURRENT = GETNEXT()                          :S(IFLOOP)                     
+*----------------------------------------------------------------------*        
+* DUMP THE FILE TO OUTPUT..                                            *        
+*----------------------------------------------------------------------*        
+-EJECT                                                                          
+    CURRENT = HEAD                                                              
+PUNLOOP                                                                         
+    CODE = FLAG(CURRENT) ';' NEST(CURRENT) ';' TYPE(CURRENT) ';'                
++        VALUE(CURRENT)                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(PUNLOOP)S(END)              
+-EJECT                                                                          
+END                                                                             

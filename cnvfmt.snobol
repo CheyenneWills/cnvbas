@@ -1,0 +1,265 @@
+-TITLE   CNVFMT                                                                 
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* FORMAT A BASIC PROGRAM INTO INTERNAL REPRESENTATION                  *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - INPUT BASIC STATEMENTS RECFM=F LRECL=80             *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE - LABEL | TEXT | COMMENT  RECFM=F LRECL=500             *        
+*  12  -  STRING - NUMBER ; DATA            LEVEL RECFM=F LRECL=255    *        
+*  13  -  COMMENT - NUMBER ; DATA           LEVEL RECFM=F LRECL=132    *        
+*  14  -  MAP                               LEVEL RECFM=F LRECL=80     *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMIANL,'TERMINAL')                                                
+    OUTPUT(.STRING,'STRING')                                                    
+    OUTPUT(.COMMENT,'COMMENT')                                                  
+    OUTPUT(.MAP,'MAP')                                                          
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE THE SUBROUTINES                                               *        
+*----------------------------------------------------------------------*        
+    DEFINE('GETTOKEN()T,D')                                                     
+    DEFINE('INCR(VAR)')                                                         
+    LITVAR = 0                                                                  
+    CMTVAR = 0                                                                  
+    DEFINE('QUEUE(TYPE,DATA)QMAP,CMNTSTR')                                      
+    DATA('LINK(VALUE,NEXT)')                                                    
+    STK =                                                                       
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('OPT(PATTERN)')                       :(ENDOPT)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDOPT                                                                          
+    OPSYN('#','OPT',1)                                                          
+                                                                                
+    BL = #SPAN(' ')                                                             
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    EOS = (BL | RPOS(0))                                                        
+    IDENTIFIER = ANY(AL) #SPAN(AL NU '._')                                      
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+                                                                                
+    INTLIT =  SPAN(NU) '%'                                                      
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+                                                                                
+    MAPPAT = (BREAK(",") ',' #(';' ARB ';') ) |                                 
++            (ARB #(';' ARB ';') BL RPOS(0))                                    
+                                                                                
+    DELIMITERS = (' &\:"!' "'")                                                 
+                                                                                
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE PROGRAM                                                  *        
+*----------------------------------------------------------------------*        
+    OUT =                                                                       
+    DATA =                                                                      
+    INREM = ABORT                                                               
+READLOOP                                                                        
+    DATA = SOURCE                                :F(ENDREAD)                    
+    DATA = TRIM(DATA)                                                           
+    TERMINAL = '<' DATA '>'                                                     
+    IDENT(DATA)                                  :S(READLOOP)                   
+*----------------------------------------------------------------------*        
+* HANDLE A SPECIAL CASE OF THEN                                        *        
+*----------------------------------------------------------------------*        
+    DATA INREM                                   :F(NOTHENR)                    
+    DATA BL 'THEN' BL                            :S(TOKLOOP)                    
+NOTHENR                                                                         
+    QUEUE('S',OUT)                                                              
+    OUT =                                                                       
+    DATA SPAN(NU) . L | (BL IDENTIFIER . L ':') = :F(NOLBL)                     
+    QUEUE('L',L)                                                                
+* HANDLE THE CASE OF REM STATEMENTS ..                                          
+    INREM = ABORT                                                               
+    DATA BL 'REM' =                              :F(NOLBL)                      
+    INREM = SUCCEED FENCE                                                       
+NOLBL                                                                           
+    OUT =                                                                       
+TOKLOOP                                                                         
+    DATA BL =                                                                   
+    IDENT(DATA)                                  :S(READLOOP)                   
+    TYPE = GETTOKEN()                    :S($("T_" TYPE))F(READLOOP)            
+T_CMNT                                                                          
+*----------------------------------------------------------------------*        
+* CHECK TO SEE IF THE CURRENT OUT STARTS WITH A MAP AND THE COMMENT    *        
+* IS PIC SOMETHING, IF SO THEN APPEND THE PIC SOMETHING TO THE OUTPUT  *        
+*----------------------------------------------------------------------*        
+    OUT BL #SEP BL 'MAP' #BL '('                 :F(NOTMAP)                     
+    TOKEN BL 'PIC '                              :F(NOTMAP)                     
+    OUT = OUT ';' TRIM(TOKEN) ';'                :(TOKLOOP)                     
+NOTMAP                                                                          
+    COMMENT = INCR(.CMTVAR) ';' TOKEN                                           
+    QUEUE('C',CMTVAR)                            :(TOKLOOP)                     
+T_SEP                                                                           
+    QUEUE('S',OUT)                                                              
+    OUT = SEP                                    :(TOKLOOP)                     
+T_STR                                                                           
+    OUT = OUT ' STR.LIT.' INCR(.LITVAR) '$'                                     
+    STRING = LITVAR ';' TOKEN                    :(TOKLOOP)                     
+T_ELSE                                                                          
+T_ENDIF                                                                         
+    QUEUE('S',OUT)                                                              
+    OUT = TOKEN                                  :(TOKLOOP)                     
+T_OTHER                                                                         
+    OUT = OUT ' ' TOKEN                          :(TOKLOOP)                     
+ENDREAD                                                                         
+    QUEUE('S',OUT)                                                              
+    STK_ = STK                                                                  
+    CMNTSTR =                                                                   
+Q_F1 IDENT(STK_)                                 :S(Q_F2)                       
+    CMNTSTR = CMNTSTR VALUE(STK_)                                               
+    CODE = GT(SIZE(CMNTSTR),450) CMNTSTR                                        
+    CMNTSTR = GT(SIZE(CMNTSTR),450)                                             
+    STK_ = NEXT(STK_)                            :(Q_F1)                        
+Q_F2 CODE = DIFFER(CMNTSTR) CMNTSTR              :(END)                         
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* GET A TOKEN FROM THE INPUT AND RETURN ITS TYPE..                     *        
+*----------------------------------------------------------------------*        
+GETTOKEN                                                                        
+    DATA BL =                                                                   
+    DATA = TRIM(DATA)                                                           
+    IDENT(DATA)                                  :S(FRETURN)                    
+    DATA INREM                                   :S(TOKXCMNT)                   
+    DATA 'ELSE'                                  :S(TOKELSE)                    
+    DATA 'END' BL 'IF'                           :S(TOKENDIF)                   
+    DATA '!'                                     :S(TOKCMNT)                    
+    DATA '&'                                     :S(TOKCONTINUE)                
+    DATA '"' | "'"                               :S(TOKSTR)                     
+    DATA ':'                                     :S(TOKCOLON)                   
+    DATA SEP                                     :S(TOKSEP)                     
+                                                                                
+    DATA (BREAK(DELIMITERS) | REM) . TOKEN =                                    
+    GETTOKEN = DIFFER(TOKEN) 'OTHER'             :S(RETURN)                     
+    DATA = SOURCE                                                               
+    DATA BL =                                    :(GETTOKEN)                    
+* WE ARE WITHIN A REM STATEMENT..                                               
+TOKXCMNT                                                                        
+    DATA BREAK('&') . T ('&' BL RPOS(0)) = T                                    
+    TOKEN = DATA                                                                
+    DATA =                                                                      
+    GETTOKEN = 'CMNT'                            :(RETURN)                      
+TOKCMNT                                                                         
+    DATA '!' ((BREAK('!') '!') | REM) . TOKEN =                                 
+    TOKEN BREAK('&') . T ('&' BL RPOS(0)) =      :F(NOCMNTCONT)                 
+    TOKEN = T                                                                   
+    DATA = '&'                                                                  
+NOCMNTCONT                                                                      
+    GETTOKEN = 'CMNT'                            :(RETURN)                      
+TOKCONTINUE                                                                     
+    DATA = DATA SOURCE                                                          
+    DATA '&' =                                   :(GETTOKEN)                    
+TOKENDIF                                                                        
+    DATA 'END' BL 'IF' =                                                        
+    TOKEN = 'END IF'                                                            
+    GETTOKEN = 'ENDIF'                           :(RETURN)                      
+TOKELSE                                                                         
+    DATA 'ELSE' =                                                               
+    TOKEN = 'ELSE'                                                              
+    GETTOKEN = 'ELSE'                            :(RETURN)                      
+TOKCOLON                                                                        
+    DATA ':' BL =                                                               
+    GETTOKEN = 'SEP'                             :(RETURN)                      
+TOKSEP                                                                          
+    DATA SEP BL =                                                               
+    GETTOKEN = 'SEP'                             :(RETURN)                      
+TOKSTR                                                                          
+    DATA LEN(1) . D =                                                           
+    DATA BREAK(*D) . TOKEN LEN(1) =                                             
+    GETTOKEN = 'STR'                             :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* INCREMENT A VARIABLE AND RETURN ITS NEW VALUE                        *        
+*----------------------------------------------------------------------*        
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* QUEUE THE RECORDS.  THIS ROUTINE HANDLES THE ORDERING OF COMMENTS    *        
+* THAT WERE FOUND.                                                     *        
+* ALL COMMENT RECORDS ARE MAINTAINED IN A QUEUE.  THE QUEUE IS FLUSHED *        
+* IN THE FOLLOWING MANNER.                                             *        
+* IF CURRENT RECORD TYPE IS LABEL THEN WRITE THE LABEL RECORD          *        
+* FOLLOWED BY QUEUED COMMENTS                                          *        
+* IF CURRENT RECORD TYPE IS STATEMENT THEN WRITE THE QUEUED COMMENTS   *        
+* FOLLOWED BY STATEMENT                                                *        
+* SPECIAL CHECK IS MADE FOR MAP STATEMENTS.  MAP STATEMENTS ARE SENT   *        
+* TO THE MAP FILE AND COMMENTS ARE FLUSHED TO THE CODE FILE.           *        
+*----------------------------------------------------------------------*        
+QUEUE                                                                           
+*----------------------------------------------------------------------*        
+* DON'T DUMP NULL DATA                                                 *        
+*----------------------------------------------------------------------*        
+    IDENT(TYPE,'S') IDENT(DATA)                  :S(RETURN)                     
+    IDENT(TYPE,'S') IDENT(TRIM(DATA),SEP)        :S(RETURN)                     
+*----------------------------------------------------------------------*        
+* IF TYPE = S AND DATA IS A MAP STATEMENT THEN DUMP IT                 *        
+*----------------------------------------------------------------------*        
+    IDENT(TYPE,'S')                              :F(Q_JMP)                      
+    DATA BL #SEP BL 'MAP' #BL '('                :F(Q_JMP)                      
+    DATA BL (#SEP BL 'MAP') . QMAP  #BL '(' = QMAP ' ('                         
+*----------------------------------------------------------------------*        
+* DUMP A MAP STATEMENT                                                 *        
+*----------------------------------------------------------------------*        
+    DATA BL #SEP BL =                                                           
+    DATA 'MAP' #BL '(' BAL . QMAP ')' BL =                                      
+    MAP = 'M;' QMAP                                                             
+Q_MAPL                                                                          
+    DATA BL =                                                                   
+* IF DATA IS EMPTY THEN DUMP ANY COMMENTS QUEUE NOW..                           
+    IDENT(TRIM(DATA))                            :S(Q_LX)                       
+    DATA BL MAPPAT . QMAP =                      :F(Q_LX)                       
+    &ANCHOR = 0                                                                 
+    QMAP #BL '=' #BL = '='                                                      
+    &ANCHOR = 1                                                                 
+    MAP = 'D;' QMAP                              :(Q_MAPL)                      
+                                                                                
+Q_JMP                                            :($('Q_' TYPE))                
+*--                                                                             
+Q_C STK = IDENT(STK) LINK('C;' DATA)             :S(Q_C1)                       
+    NEXT(STK_) = LINK('C;' DATA)                                                
+    STK_ = NEXT(STK_)                            :(RETURN)                      
+Q_C1 STK_ = STK                                  :(RETURN)                      
+*--                                                                             
+Q_L                                                                             
+    CODE = TYPE ';' DATA                                                        
+Q_LX                                                                            
+    STK_ = STK                                                                  
+    STK =                                                                       
+    CMNTSTR =                                                                   
+Q_L1 IDENT(STK_)                                 :S(Q_L2)                       
+    CMNTSTR = CMNTSTR VALUE(STK_)                                               
+    CODE = GT(SIZE(CMNTSTR),450) CMNTSTR                                        
+    CMNTSTR = GT(SIZE(CMNTSTR),450)                                             
+    STK_ = NEXT(STK_)                            :(Q_L1)                        
+Q_L2 CODE = DIFFER(CMNTSTR) CMNTSTR              :(RETURN)                      
+                                                                                
+Q_S                                                                             
+    STK_ = STK                                                                  
+    CMNTSTR =                                                                   
+Q_S1 IDENT(STK_)                                 :S(Q_S2)                       
+    CMNTSTR = CMNTSTR VALUE(STK_)                                               
+    CODE = GT(SIZE(CMNTSTR),450) CMNTSTR                                        
+    CMNTSTR = GT(SIZE(CMNTSTR),450)                                             
+    STK_ = NEXT(STK_)                            :(Q_S1)                        
+Q_S2 CODE = DIFFER(CMNTSTR) CMNTSTR                                             
+    CODE = TYPE ';' DATA                                                        
+    STK =                                        :(RETURN)                      
+END                                                                             

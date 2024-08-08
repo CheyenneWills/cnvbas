@@ -1,0 +1,245 @@
+-TITLE   CNVIO                                                                  
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* PROCESS I/O STATEMENTS.                                              *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE INTERNAL FORMAT          RECFM=F LRECL=500            *        
+*  9   -  FILE TABLE                                                   *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  12  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    INPUT(.FILES,'FILES')                                                       
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+    DATA('FILE(ID,NUM,IO,ORG,ACC,RECSZ,KEY,MAP,NEXT)')                          
+    DATA('TEXT(TYPE,VALUE,NEST,FLAG,NEXT)')                                     
+    DEFINE('INSERT(C,T,V)N')                                                    
+    DEFINE('INSERTB(C,T,V)N')                                                   
+    DEFINE('GETNEXT(C)N')                                                       
+    DEFINE('GETFILE()ID,NUM,IO,ORG,ACC,RECSZ,MAPNM,KEY,IN')                     
+    DEFINE('GETTEXT()IN,L,T,V')                  :(GETTEXT_END)                 
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT STATEMENT OR LABEL                                   *        
+*----------------------------------------------------------------------*        
+GETNEXT                                                                         
+    C = IDENT(C) CURRENT                                                        
+    N = C                                                                       
+GETNEXTL                                                                        
+    N = NEXT(N)                                                                 
+    IDENT(N)                                     :S(FRETURN)                    
+    IDENT(TYPE(N),'C')                           :S(GETNEXTL)                   
+    GETNEXT = N                                  :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . L ';' BREAK(';') . T ';' REM . V                            
+    GETTEXT = TEXT(T,V,L,NULL,NULL)              :(RETURN)                      
+*-- READ IN A FILE                                                              
+GETFILE                                                                         
+    IN = FILES                                   :F(FRETURN)                    
+    IN BREAK(';') . ID ';'                                                      
++      BREAK(';') . NUM ';'                                                     
++      BREAK(';') . IO ';'                                                      
++      BREAK(';') . ORG ';'                                                     
++      BREAK(';') . ACC ';'                                                     
++      BREAK(';') . RECSZ ';'                                                   
++      BREAK(';') . KEY ';'                                                     
++      REM . MAPNM                                                              
+       GETFILE = FILE(ID,NUM,IO,ORG,ACC,RECSZ,KEY,MAPNM) :(RETURN)              
+GETTEXT_END                                                                     
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+DECR $VAR = $VAR - 1                                                            
+    DECR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE AFTER C                                                *        
+*----------------------------------------------------------------------*        
+INSERT                                                                          
+    N = COPY(C)                                                                 
+    TYPE(N) = T                                                                 
+    VALUE(N) = V                                                                
+    NEST(N) = NEST(C)                                                           
+    NEST(N) = IDENT(T,'L') 0                                                    
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERT = N                                   :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE BEFORE C                                               *        
+*----------------------------------------------------------------------*        
+INSERTB                                                                         
+    N = COPY(C)                                                                 
+    TYPE(C) = T                                                                 
+    VALUE(C) = V                                                                
+    NEST(C) = IDENT(T,'L') 0                                                    
+    NEST(N) = NEST(C)                                                           
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERTB = N                                  :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    BL = SPAN(' ')                                                              
+    EOS = #BL RPOS(0)                                                           
+    RELOP = '==' | '<>' | '><' | '<=' | '>=' | '^=' | '=' | '>' | '<'           
+    IDENTIFIER = ANY(AL) (SPAN(AL NU '._') | '')                                
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+    INTLIT =  #'-' SPAN(NU) '%'                                                 
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+                                                                                
+    ARRAY1REF = (INTID | INTLIT | SPAN(NU)) #BL                                 
+    ARRAY2REF = #BL ARRAY1REF #(',' ARRAY2REF)                                  
+    ARRAY3REF = #BL '(' BAL #ARRAY2REF #BL ')'                                  
+                                                                                
+    STRIDREF = STRID #ARRAY3REF                                                 
+    ASGN1PAT = VARID #ARRAY3REF                                                 
+    ASGN2PAT = (VARID #ARRAY3REF) | NUMLIT                                      
+    ASGN3PAT = ASGN1PAT #(#BL ',' #BL *ASGN3PAT)                                
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE CODE..                                                   *        
+*----------------------------------------------------------------------*        
+    HEAD = GETTEXT()                                                            
+    CURRENT = HEAD                                                              
+READLOOP                                                                        
+    NEXT(CURRENT) = GETTEXT()                    :F(ENDREAD)                    
+    CURRENT = NEXT(CURRENT)                      :(READLOOP)                    
+ENDREAD                                                                         
+*----------------------------------------------------------------------*        
+* READ IN THE FILES                                                    *        
+*----------------------------------------------------------------------*        
+    FILETBL = TABLE(20)                                                         
+FILELOOP                                                                        
+    FC = GETFILE()                               :F(ENDFILE)                    
+    FILETBL<NUM(FC)> = IDENT(FILETBL<NUM(FC)>) FC  :(FILELOOP)                  
+ENDFILE                                                                         
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* SEARCH AND CONVERT I/O STATEMENTS.                                   *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+MAINLOOP                                                                        
+    VALUE(CURRENT) #SEP ('CLOSE' | 'DATA' | 'DELETE' | 'FIND' |                 
++   'FIELD' | 'FREE' | 'GET' | 'INPUT' | 'LINPUT' | 'MARGIN' | 'PRINT' |        
++    'READ' | 'NAME' BL 'AS' | 'PUT' | 'RESET' | 'RESTORE' |                    
++    'SCRATCH' | 'UPDATE' | 'UNLOCK') BL     :F(NEXTSTMT)                       
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* CONVERT RESTORE INTO A CLOSE/OPEN SEQUENCE                           *        
+*----------------------------------------------------------------------*        
+    VALUE(CURRENT) #SEP . A ('RESTORE' | 'RESET') BL #'#' #BL                   
++        (BREAK(',% ') | REM) . ID               :F(NOTRESTORE)                 
+    VALUE(CURRENT) ARB ',' #BL 'KEY'             :F(NORESKEY)                   
+    CURRENT = INSERTB(CURRENT,'C','W;RESTORE CONTAINS A KEY CLAUSE')            
+NORESKEY                                                                        
+    VALUE(CURRENT) = A 'CLOSE FILE-' ID                                         
+    CURRENT = INSERT(CURRENT,'S',SEP 'OPEN INPUT FILE-' ID)                     
++                                                :(NEXTSTMT)                    
+NOTRESTORE                                                                      
+-SPACE                                                                          
+    VALUE(CURRENT) #SEP . A 'CLOSE' BL REM . B   :F(NOTCLOSE)                   
+    CLOSEOUT = A ' CLOSE'                                                       
+CLOSEMULT B #BL #"#" #BL SPAN(AL NU) . A #'%' #BL (',' | EOS) =                 
++                                                :F(CLOSED)                     
+    CLOSEOUT = CLOSEOUT ' FILE-' TRIM(A) ' '     :(CLOSEMULT)                   
+CLOSED VALUE(CURRENT) = CLOSEOUT                 :(NEXTSTMT)                    
+NOTCLOSE                                                                        
+*----------------------------------------------------------------------*        
+* PROCESS A GET STATEMENT                                              *        
+*----------------------------------------------------------------------*        
+    VALUE(CURRENT) #SEP . A 'GET' BL '#' BREAK(',% ') . ID                      
++       #(ARB ',' #BL 'KEY' BL '#0' BL 'EQ' ARB . E #BL RPOS(0))                
++                                                :F(NOTGET)                     
+    IDENT(E)                                     :S(NOTKEYED)                   
+* TRY TO HANDLE A KEYED FILE                                                    
+    IDENT(FILETBL<ID>)                           :S(NOTPUT)                     
+    FILEKEY = KEY(FILETBL<ID>)                                                  
+    FILEKEY = IDENT( KEY(FILETBL<ID>)) '<FILE-' FILEX<X> '-KEY>'                
+    DLINE(CURRENT) = A 'MOVE ' E ' TO ' FILEKEY                                 
+    CURRENT = INSERT(CURRENT,'S',SEP 'READ FILE-' ID) :(NEXTSTMT)               
+NOTKEYED                                                                        
+    VALUE(CURRENT) = A 'READ FILE-' ID            :(NEXTSTMT)                   
+NOTGET                                                                          
+                                                                                
+*----------------------------------------------------------------------*        
+* PROCESS A PUT STATEMENT                                              *        
+*----------------------------------------------------------------------*        
+    RPUT = #(ARB ',' #BL 'RECORD') . R                                          
+    CPUT = #(ARB ',' #BL 'COUNT') . C                                           
+    R =                                                                         
+    C =                                                                         
+    VALUE(CURRENT) #SEP . A 'PUT' BL '#' (((BREAK(',% ') . ID #'%')             
++   ((RPUT CPUT) | (CPUT RPUT)) EOS) | REM . ID) :F(NOTPUT)                     
+    DIFFER(C)                                    :S(NOTPUT)                     
+    DIFFER(R)                                    :S(NOTPUT)                     
+    IDENT(MAP(FILETBL<ID>))                      :S(NOTPUT)                     
+    VALUE(CURRENT) = A 'WRITE '  MAP(FILETBL<ID>) :(NEXTSTMT)                   
+NOTPUT                                                                          
+*----------------------------------------------------------------------*        
+* CONVERT SIMPLE PRINT STATEMENTS INTO DISPLAYS                        *        
+*----------------------------------------------------------------------*        
+*----------------------------------------------------------------------*        
+* MAKE PRINT STR,STR,... INTO DISPLAY X,X,X UPON CONSOLE.              *        
+*----------------------------------------------------------------------*        
+    VALUE(CURRENT) #SEP 'PRINT' BL               :F(NOTPRINT)                   
+    LINE = VALUE(CURRENT)                                                       
+    LINE #SEP 'PRINT' BL '#'                     :S(NOTPRINT)                   
+    &ANCHOR = 0                                                                 
+    LINE 'PRINT' BL RPOS(0) = 'PRINT SPACES'                                    
+    LINE 'PRINT' = 'DISPLAY'                                                    
+    LINE = LINE ' UPON CONSOLE'                                                 
+PRTSEMI LINE ';' | '+' = ','                     :S(PRTSEMI)                    
+    &ANCHOR = 1                                                                 
+    VALUE(CURRENT) = LINE                        :(NEXTSTMT)                    
+NOTPRINT                                                                        
+*----------------------------------------------------------------------*        
+* MARK ANY OTHER I/O STATEMENT AS AN UNCONVERTED STATEMENT             *        
+*----------------------------------------------------------------------*        
+    FLAG(CURRENT) = 'I'                                                         
+NEXTSTMT                                                                        
+    CURRENT = GETNEXT()                          :S(MAINLOOP)                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* DUMP THE DATA..                                                      *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+PUNLOOP                                                                         
+    CODE = FLAG(CURRENT) ';' NEST(CURRENT) ';' TYPE(CURRENT) ';'                
++        VALUE(CURRENT)                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(PUNLOOP)S(END)              
+-EJECT                                                                          
+                                                                                
+END                                                                             

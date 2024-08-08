@@ -1,0 +1,8 @@
+*.code
+*.listing
+*.report
+*.file
+*.sym
+*.string
+*.vmarc
+*.comment

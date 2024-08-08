@@ -1,0 +1,351 @@
+-TITLE   CNVTRAN                                                                
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* PERFORM SIMPLE TRANSFORMATIONS.                                      *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE INTERNAL FORMAT          RECFM=F LRECL=500            *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL')                                                
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+                                                                                
+    DATA('TEXT(TYPE,VALUE,NEST,FLAG,NEXT)')                                     
+    DEFINE('EXPND(E)P,OP,A,B,NAM')                                              
+    DEFINE('EXPNDL(E)P,OP,A,B,NAM')                                             
+    DEFINE('EXPNDC(E)P,A,B,NAM')                                                
+    DEFINE('INSERT(C,T,V)N')                                                    
+    DEFINE('INSERTB(C,T,V)N')                                                   
+    DEFINE('GETNEXT(C)N')                                                       
+    DEFINE('GETTEXT()IN,L,T,V,F')                                               
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT STATEMENT OR LABEL                                   *        
+*----------------------------------------------------------------------*        
+GETNEXT                                                                         
+    C = IDENT(C) CURRENT                                                        
+    N = C                                                                       
+GETNEXTL                                                                        
+    N = NEXT(N)                                                                 
+    IDENT(N)                                     :S(FRETURN)                    
+    IDENT(TYPE(N),'C')                           :S(GETNEXTL)                   
+    GETNEXT = N                                  :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . F ';' BREAK(';') . L ';' BREAK(';') . T ';' REM . V         
+    GETTEXT = TEXT(T,V,L,F,NULL)                 :(RETURN)                      
+                                                                                
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+DECR $VAR = $VAR - 1                                                            
+    DECR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE AFTER C                                                *        
+*----------------------------------------------------------------------*        
+INSERT                                                                          
+    N = COPY(C)                                                                 
+    TYPE(N) = T                                                                 
+    VALUE(N) = V                                                                
+    NEST(N) = NEST(C)                                                           
+    NEST(N) = IDENT(T,'L') 0                                                    
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERT = N                                   :(RETURN)                      
+*----------------------------------------------------------------------*        
+* INSERT A LINE BEFORE C                                               *        
+*----------------------------------------------------------------------*        
+INSERTB                                                                         
+    N = COPY(C)                                                                 
+    TYPE(C) = T                                                                 
+    VALUE(C) = V                                                                
+    NEST(C) = IDENT(T,'L') 0                                                    
+    NEST(N) = NEST(C)                                                           
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERTB = N                                  :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    BL = SPAN(' ')                                                              
+    EOS = #BL RPOS(0)                                                           
+    RELOP = '==' | '<>' | '><' | '<=' | '>=' | '^=' | '=' | '>' | '<'           
+    IDENTIFIER = ANY(AL) (SPAN(AL NU '._') | '')                                
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+    INTLIT =  #'-' SPAN(NU) '%'                                                 
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+                                                                                
+    ARRAY1REF = (INTID | INTLIT | SPAN(NU)) #BL                                 
+    ARRAY2REF = #BL ARRAY1REF #(',' *ARRAY2REF)                                 
+    ARRAY3REF = #BL '(' BAL #ARRAY2REF #BL ')'                                  
+                                                                                
+    STRIDREF = STRID #ARRAY3REF                                                 
+    ASGN1PAT = VARID #ARRAY3REF                                                 
+    ASGN2PAT = (VARID #ARRAY3REF) | NUMLIT                                      
+    ASGN3PAT = ASGN1PAT #(#BL ',' #BL *ASGN3PAT)                                
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+*  DEFINE THE BUILTIN FUNCTIONS                                        *        
+*----------------------------------------------------------------------*        
+    BLTINFUN = 'ABS' | 'ABS%' | 'ASCII' | 'ASC' | 'ATN' | 'BUFSIZ' |            
++   'CCPOS' | 'CHR$' | 'COMP%' | 'COS' | 'CVT$$' | 'CVT$%' | 'CVT%$' |          
++   'CVTF$' | 'CVT$F' | 'DATE$' | 'DECIMAL' | 'DIF$' | 'ECHO' |                 
++   'EDIT$' | 'ERT$' | 'EXP' | 'FIX' | 'FORMAT$' | 'FSP$' | 'FSS$' |            
++   'GETRFA' | 'INSTR' | 'INT' | 'INTEGER' | 'LEFT' | 'LEFT$' |                 
++   'LEN' | 'LOC' | 'LOG' | 'LOG10' | 'MAG' | 'MAGTAPE' | 'MAR' |               
++   'MAR%' | 'MID' | 'MID%' | 'NOECHO' | 'NUM$' | 'NUM1$' | 'ONECHR' |          
++   'PLACE$' | 'POS' | 'PROD$' | 'QUO$' | 'RAD$' | 'RCTRLO' |                   
++   'REAL' | 'RIGHT' | 'RIGHT$' | 'SEG$' | 'SGN' | 'SIN' | 'SPACE$' |           
++   'SQR' | 'SQRT' | 'STR$' | 'STRING$' | 'SUM$' | 'SWAP$' |                    
++   'SYS' | 'TAB' | 'TAN' | 'TIME' | 'TIME$' | 'TRM$' | 'VAL' |                 
++   'VAL%' | 'XLATE'                                                            
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE WHAT AN EXPRESSION IS..                                       *        
+*----------------------------------------------------------------------*        
+    EXP = ARB #NOTANY('$') ARB ANY("+-*/^()") ARB #NOTANY('$')                  
+*----------------------------------------------------------------------*        
+* DEFINE A CALL STATEMENT.                                             *        
+*----------------------------------------------------------------------*        
+    CALLPAT1 = 'CALL' BL BREAK('(') . SUBRTN '(' BAL . ARGS ')'                 
+    CALLPAT2 = 'CALL' BL (NOTANY(' ') ARB) . SUBRTN BL RPOS(0) . ARGS           
+    CALLPAT = CALLPAT1 | CALLPAT2                                               
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE CODE..                                                   *        
+*----------------------------------------------------------------------*        
+    HEAD = GETTEXT()                                                            
+    CURRENT = HEAD                                                              
+READLOOP                                                                        
+    NEXT(CURRENT) = GETTEXT()                    :F(ENDREAD)                    
+    CURRENT = NEXT(CURRENT)                      :(READLOOP)                    
+ENDREAD                                                                         
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* START SIMPLE TRANSFORMATIONS                                         *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT(CURRENT)                         
+MAINLOOP                                                                        
+*   TERMINAL = IDENT(TYPE(CURRENT),'L') VALUE(CURRENT)                          
+    TERMINAL = VALUE(CURRENT)                                                   
+    IDENT(TYPE(CURRENT),'L')                     :S(NEXTSTMT)                   
+*----------------------------------------------------------------------*        
+* PROCESS STATEMENTS                                                   *        
+*----------------------------------------------------------------------*        
+                                                                                
+*-- REMOVE NUM1 VALUES                                                          
+  VALUE(CURRENT) ARB (('NUM1' #'$') | 'VAL') #BL '(' BAL ')' :F(NONUM1)         
+    LINE = VALUE(CURRENT)                                                       
+    &ANCHOR = 0                                                                 
+REMVAL LINE 'VAL' #BL '(' BAL . A ')' = '(' A ')' :S(REMVAL)                    
+REMNUM1 LINE 'NUM1' #'$' #BL '(' BAL . A ')' = '(' A ')' :S(REMNUM1)            
+*REMVAL LINE 'VAL' #BL '(' BAL . A ')' = ' ' A ' '  :S(REMVAL)                  
+*REMNUM1 LINE 'NUM1' #'$' #BL '(' BAL . A ')' = ' ' A ' ' :S(REMNUM1)           
+ADJB LINE '(' #BL '(' BAL . O ')' #BL ')' = '(' O ')' :S(ADJB)                  
+    LINE '=' #BL '(' BAL . O ')' EOS = '= ' O                                   
+    &ANCHOR = 1                                                                 
+    VALUE(CURRENT) = LINE                                                       
+    CURRENT = INSERTB(CURRENT,'C',                                              
++        'W;FOLLOWING LINE CONTAINED NUM1 OR VAL')                              
+NONUM1                                                                          
+                                                                                
+*-- UNANCHORED SCANS                                                            
+*-- REPLACE CONDITIONALS                                                        
+    &ANCHOR = 0                                                                 
+REPNOTEQ VALUE(CURRENT) '<>' = ' NOT = '         :S(REPNOTEQ)                   
+REPNOTLE VALUE(CURRENT) '<=' = ' NOT > '         :S(REPNOTLE)                   
+REPNOTGE VALUE(CURRENT) '>=' = ' NOT < '         :S(REPNOTGE)                   
+REPEQEQ  VALUE(CURRENT) '==' = ' = '             :S(REPEQEQ)                    
+                                                                                
+*-- REPLACE SP WITH SPACES                                                      
+REPSP VALUE(CURRENT) ' SP ' = ' SPACES '           :S(RREPSP)                   
+REPSP2 VALUE(CURRENT) ' SPACES$(' BAL ')' = ' SPACES ' :S(REPSP2)               
+    VALUE(CURRENT) ' SP' RPOS(0) = ' SPACES'                                    
+*---                                                                            
+    &ANCHOR = 1                                                                 
+                                                                                
+*-- REPLACE CALL X(Y) WITH CALL X USING Y                                       
+    VALUE(CURRENT) ARB . A CALLPAT               :F(NOTCALL)                    
+    ARGS = DIFFER(ARGS) ' USING ' EXPNDC(ARGS)                                  
+    VALUE(CURRENT) = A "CALL '" TRIM(SUBRTN) "'" ARGS                           
+NOTCALL                                                                         
+                                                                                
+*-- EXPAND ANY CONDITIONALS                                                     
+    VALUE(CURRENT) ARB . A #BL 'IF' BL ARB . COND BL 'THEN' =                   
++        A 'IF ' EXPNDL(COND) ' THEN'                                           
+                                                                                
+*----------------------------------------------------------------------*        
+* FOLLOWING ARE SPECIFIC TRANSFORMS AND WILL EACH BRANCH TO NEXTSTMT   *        
+*----------------------------------------------------------------------*        
+*-- GOTO ID -> GOTO ID-PARA                                                     
+    VALUE(CURRENT) #SEP . A 'GOTO' BL (IDENTIFIER | SPAN(NU)) . L               
++       (EOS | BL) = A 'GOTO ' L '-PARA'         :S(NEXTSTMT)                   
+                                                                                
+*-- REPLACE AN END WITH EXIT PROGRAM                                            
+    VALUE(CURRENT) #SEP #BL ('END' | 'SUBEND' | 'SUBEXIT') EOS                  
++                                                :F(NOTANEXIT)                  
+    VALUE(CURRENT) = '99999-EXIT-PROGRAM'                                       
+    TYPE(CURRENT) = 'L'                                                         
+    INSERT(CURRENT,'S','EXIT PROGRAM')           :(NEXTSTMT)                    
+NOTANEXIT                                                                       
+                                                                                
+*-- REPLACE SIMPLE ASSIGNEMENTS                                                 
+    VALUE(CURRENT) #SEP . S #('LET' | 'LSET' | 'RSET') . T #BL                  
++        ASGN1PAT . A #BL '=' #BL ASGN2PAT . B EOS :F(NOTASGN)                  
+    T = IDENT(T,'LET')                                                          
+    CURRENT = DIFFER(T) INSERTB(CURRENT,'C','W;FOLLOWING MOVE USED ' T)         
+    B BL =                                                                      
+    B = TRIM(B)                                                                 
+    B POS(0) '0' #(('.' #ARBNO('0')) | '%') RPOS(0) = 'ZEROS'                   
+    VALUE(CURRENT) = S 'MOVE ' EXPNDC(B) ' TO ' EXPNDC(A)                       
++                                                :(NEXTSTMT)                    
+NOTASGN                                                                         
+                                                                                
+*-- REPLACE MULTIPLE ASSIGNEMENTS                                               
+    VALUE(CURRENT) #SEP . S #('LET' | 'LSET' | 'RSET') . T #BL                  
++        ASGN3PAT . A #BL '=' #BL ASGN2PAT . B EOS :F(NOTMASGN)                 
+                                                                                
+    T = IDENT(T,'LET')                                                          
+    CURRENT = DIFFER(T)                                                         
++      INSERTB(CURRENT,'C','W;FOLLOWING BLOCK OF MOVES USED ' T)                
+    B BL =                                                                      
+    B = TRIM(B)                                                                 
+    B POS(0) '0' #'.' RPOS(0) = 'ZEROS'                                         
+    A #BL ASGN1PAT . V #BL (',' | RPOS(0)) =     :F(ENDMASGN)                   
+    VALUE(CURRENT) = 'MOVE ' EXPNDC(B) ' TO ' EXPNDC(V)                         
+    TYPE(CURRENT) = 'S'                                                         
+    S = SEP                                                                     
+    NEWL = CURRENT                                                              
+MASGN                                                                           
+    A #BL ASGN1PAT . V #BL (',' | RPOS(0)) =     :F(ENDMASGN)                   
+    NEWL = INSERT(NEWL,'S',S 'MOVE ' EXPNDC(B) ' TO ' EXPNDC(V))                
+    S = SEP                                      :(MASGN)                       
+ENDMASGN                                                                        
+    IDENT(T)                                     :S(NEXTSTMT)                   
+    INSERT(CURRENT,'C','W;END OF BLOCK FOR ' T)  :(NEXTSTMT)                    
+NOTMASGN                                                                        
+                                                                                
+*-- REPLACE ARITH STATEMENTS WITH A COMPUTE STATEMENT                           
+    VALUE(CURRENT) #SEP . S #('LET' | 'LSET' | 'RSET') . T #BL                  
++        #BL VARID . A #BL '=' #BL REM . B       :F(NOTARITH)                   
+    T = IDENT(T,'LET')                                                          
+    FLAG(CURRENT) = DIFFER(T) FLAG(CURRENT) 'M'                                 
+    B BREAK('+*-/^')                             :F(NOTARITH)                   
+    B BREAK('<>$=')                              :F(NOARITHM)                   
+    A RTAB(1) '$'                                :S(NOTARITH)                   
+    CURRENT = INSERTB(CURRENT,'C',                                              
++      'W;FOLLOWING CONTAINS STRING OPS IN ARITH EXP')                          
+NOARITHM                                                                        
+    B EXP RPOS(0)                                :F(NOTARITH)                   
+    VALUE(CURRENT) = S 'COMPUTE ' A ' = ' EXPND(B) :(NEXTSTMT)                  
+NOTARITH                                                                        
+                                                                                
+*-- REPLACE A$ = B$ + C$...                                                     
+    VALUE(CURRENT) #SEP . S #('LET' | 'RSET' | 'LSET') . T #BL STRIDREF         
++    . A #BL '=' #BL REM . B                     :F(NOTSTRING)                  
+    B BREAK('-/*^')                              :S(MARKSTRING)                 
+    B BREAK('+')                                 :F(NOTSTRING)                  
+    T = IDENT(T,'LET')                                                          
+    CURRENT = DIFFER(T) INSERTB(CURRENT,'C','W;FOLLOWING MOVE USED ' T)         
+    &ANCHOR = 0                                                                 
+REPPLUS B '+' = ', '                             :S(REPPLUS)                    
+    &ANCHOR = 1                                                                 
+    A = EXPNDC(A)                                                               
+    B = EXPNDC(B)                                                               
+    VALUE(CURRENT) = S 'STRING ' B ' DELIMITED BY SIZE INTO ' A                 
++                                               :(NOTSTRING)                    
+MARKSTRING FLAG(CURRENT) = FLAG(CURRENT) 'S'                                    
+NOTSTRING                                                                       
+                                                                                
+*----------------------------------------------------------------------*        
+* LOOK FOR RESUME, SLEEP, ARITH IN IF STATEMENTS, AND BUILTIN FUNCTIONS*        
+*----------------------------------------------------------------------*        
+    VALUE(CURRENT) #SEP ('RESUME' | 'SLEEP')     :F(NOTSLEEP)                   
+    FLAG(CURRENT) = FLAG(CURRENT) 'R'                                           
+NOTSLEEP                                                                        
+    VALUE(CURRENT) #SEP 'IF' BREAK('+/*-') BREAKX('T') 'THEN'                   
++                                                :F(NOTIFCOMP)                  
+    FLAG(CURRENT) = FLAG(CURRENT) '+'                                           
+NOTIFCOMP                                                                       
+*-- GET THE NEXT STATEMENT                                                      
+NEXTSTMT                                                                        
+    VALUE(CURRENT) ARB BLTINFUN #BL '(' BAL ')'  :F(NOTRESERVE)                 
+    FLAG(CURRENT) = FLAG(CURRENT) 'B'                                           
+NOTRESERVE                                                                      
+    CURRENT = GETNEXT()                          :S(MAINLOOP)                   
+-EJECT                                                                          
+    CURRENT = HEAD                                                              
+PUNLOOP                                                                         
+    VALUE(CURRENT) IDENT(TYPE(CURRENT),'S') 'DIM' #'ENSION' :S(NEXTPUN)         
+    CODE = FLAG(CURRENT) ';' NEST(CURRENT) ';' TYPE(CURRENT) ';'                
++        VALUE(CURRENT)                                                         
+NEXTPUN                                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(PUNLOOP)S(END)              
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* EXPAND AN EXPRESSION INSERTING SPACES BETWEEN OPERATORS AND OPERANDS *        
+*----------------------------------------------------------------------*        
+EXPND                                                                           
+    NAM = .EXPND                                                                
+    P = 0                                                                       
+EXPNDX E (*TAB(P + 1) ARB) . A ('**' | ANY('+-*^/')) . OP @P                    
++        REM . B    = A ' ' OP ' ' B             :S(EXPNDX)F(EXPCOM)            
+                                                                                
+*----------------------------------------------------------------------*        
+* INSERT A SPACE AFTER A COMMA                                         *        
+*----------------------------------------------------------------------*        
+EXPNDC                                                                          
+    NAM = .EXPNDC                                                               
+    P = 0                                                                       
+EXPNDCX E (*TAB(P + 1) ARB) . A ',' @P REM . B = A ', ' B                       
++                                                :S(EXPNDCX)F(EXPCOM)           
+*----------------------------------------------------------------------*        
+* EXPAND AN IF CONDITION                                               *        
+*----------------------------------------------------------------------*        
+EXPNDL                                                                          
+    NAM = .EXPNDL                                                               
+    P = 0                                                                       
+EXPNDLX E (*TAB(P + 1) ARB) . A RELOP . OP @P REM . B = A ' ' OP ' ' B          
++                                                :S(EXPNDLX)F(EXPCOM)           
+*-- COMMON ROUTINE AND EXIT FOR EXPAND FUNCTIONS                                
+EXPCOM                                                                          
+    &ANCHOR = 0                                                                 
+COMP E '  ' = ' '                                :S(COMP)                       
+    &ANCHOR = 1                                                                 
+    $NAM = E                                    :(RETURN)                       
+END                                                                             

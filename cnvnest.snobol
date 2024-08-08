@@ -1,0 +1,118 @@
+-TITLE   CNVNEST                                                                
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* GENERATE NESTING LEVELS FOR STATEMENTS                               *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - INPUT FROM CNVMOD      RECFM=F LRECL=500            *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    &DUMP = 1                                                                   
+    &TRIM = 1                                                                   
+    &ANCHOR = 1                                                                 
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+    DATA('TEXT(TYPE,VALUE,NEST,NEXT)')                                          
+    DEFINE('GETTEXT()IN,T,V')                    :(GETTEXT_END)                 
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . T ';' REM . V                                               
+    GETTEXT = TEXT(T,V,0,NULL)                   :(RETURN)                      
+GETTEXT_END                                                                     
+                                                                                
+    DEFINE('PUSH(X)')                                                           
+    DEFINE('POP()')                                                             
+    DEFINE('TOP()')                                                             
+    DATA('LINK(NEXT,VALUE)')                     :(PUSH_END)                    
+PUSH PUSH_POP = LINK(PUSH_POP,X)                                                
+    PUSH = .VALUE(PUSH_POP)                      :(NRETURN)                     
+POP IDENT(PUSH_POP)                              :S(FRETURN)                    
+    POP = VALUE(PUSH_POP)                                                       
+    PUSH_POP = NEXT(PUSH_POP)                    :(RETURN)                      
+TOP IDENT(PUSH_POP)                              :S(FRETURN)                    
+    TOP = .VALUE(PUSH_POP)                       :(NRETURN)                     
+PUSH_END                                                                        
+                                                                                
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+    BL = #SPAN(' ')                                                             
+    NU = '0123456789'                                                           
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+*                                                                      *        
+* RULES:                                                               *        
+*                                                                      *        
+*   IF THE CURRENT CARD IS A LABEL, RESET ILVL BACK TO ZERO AND RESET  *        
+*    STACK                                                             *        
+*   IF AN IF STATEMENT IS PUSH 'IF' AND CURRENT ILVL INCR ILVL AND     *        
+*    PUSH ELSE                                                         *        
+*   IF AN ELSE STATEMENT POP ELSE AND ILVL                             *        
+*   IF AN END IF IS FOUND POP UNTIL WE HAVE AN IF                      *        
+*                                                                      *        
+*----------------------------------------------------------------------*        
+    ILVL = 0                                                                    
+    PUSH_POP =                                                                  
+MAJORLOOP                                                                       
+    DATA = GETTEXT()    :S($("MAJOR_" TYPE(DATA)))F(END)                        
+                                                                                
+* STATEMENTS                                                                    
+MAJOR_S                                                                         
+* LETS ALSO CLEAN UP JUST A BIT..                                               
+    VALUE(DATA) BL =                                                            
+    VALUE(DATA) SEP BL = SEP                                                    
+    VALUE(DATA) #SEP ('IF' . ACT ' ') | ('ELSE' . ACT BL RPOS(0)) |             
++       ('END' . ACT BL 'IF' BL RPOS(0))                                        
++              :F(MAJOR_REP)S($("NESTCHNG_" ACT))                               
+                                                                                
+* IF PUSH IF:ILVL INCR ILVL PUSH ELSE:ILVL                                      
+NESTCHNG_IF                                                                     
+    CODE = ILVL ';' TYPE(DATA) ';' VALUE(DATA)                                  
+    PUSH('IF:' ILVL)                                                            
+    INCR(.ILVL)                                                                 
+    PUSH('ELSE:' ILVL)                           :(MAJORLOOP)                   
+                                                                                
+NESTCHNG_ELSE                                                                   
+    TOP() 'IF:'                                  :F(ELSE_1)                     
+    POP()                                                                       
+ELSE_1                                                                          
+    POP() 'ELSE:' SPAN(NU) . ILVL                :S(MAJOR_REP)                  
+    TERMINAL = 'NESTING LEVEL ERROR'                                            
+    TERMINAL = VALUE(CURRENT)                                                   
+                                                                                
+NESTCHNG_END                                                                    
+    POP() 'IF:' SPAN(NU) . ILVL  :F(NESTCHNG_END)S(MAJOR_REP)                   
+                                                                                
+* LABELS                                                                        
+MAJOR_L                                                                         
+    ILVL = 0                                                                    
+    PUSH_POP =                                                                  
+* COMMENTS                                                                      
+MAJOR_C                                                                         
+MAJOR_REP                                                                       
+    CODE = ILVL ';' TYPE(DATA) ';' VALUE(DATA)   :(MAJORLOOP)                   
+END                                                                             

@@ -1,0 +1,163 @@
+-TITLE   CNVSYM                                                                 
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* FIND ALL BASIC VARIABLES AND GENERATE A SYMBOL TABLE                 *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - CONVERTOR INTERNAL FORMAT                           *        
+*  11  -  MAP    - INPUT MAP STATEMENTS                                *        
+* OUTPUTS:                                                             *        
+*  12  -  SYM - SYMBOL TABLE                                           *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    INPUT(.MAP,'MAP')                                                           
+    OUTPUT(.SYM,'SYM')                                                          
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDFUNC                                                                         
+                                                                                
+    OPSYN('#','OPT',1)                                                          
+    BL = #SPAN(' ')                                                             
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    IDENTIFIER = ANY(AL) #SPAN(AL NU '._')                                      
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE ALL THE RESERVED KEYWORDS OF BASIC..                          *        
+*----------------------------------------------------------------------*        
+    RESERVE1 =                                                                  
++        'ABS' | 'ABS%' | 'ACCESS' | 'ALLOW' | 'ALTERNATE' |                    
++        'AND' | 'APPEND' | 'AS' |                                              
++        'ASCII' | 'ATN' | 'BACK' | 'BEL' | 'BLOCK' |                           
++        'BLOCKSIZE' | 'BS' | 'BUCKETSIZE' |                                    
++        'BUFFER' | 'BUFSIZ' | 'BY' | 'CALL' |                                  
++        'CCPOS' | 'CHAIN' | 'CHANGE' | 'CHANGES' |                             
++        'CHR$' | 'CLOSE' | 'CLUSTERSIZE' | 'COM' |                             
++        'COMMON' | 'COMP%' | 'CON' | 'CONNECT' |                               
++        'CONTIGUOUS' | 'COS' | 'COUNT' | 'CR' |                                
++        'CTRLC' | 'CVT$$' | 'CVT$%' | 'CVT$F' |                                
++        'CVT%S' | 'CVTF$' | 'DATA' | 'DATE$' |                                 
++        'DEF' | 'DELETE' | 'DENSITY' | 'DESC' |                                
++        'DET' | 'DIF$' | 'DIM' | 'DIMENSION' |                                 
++        'DUPLICATES' | 'ECHO' | 'EDIT$' | 'ELSE'                               
+   RESERVE1A =                                                                  
++        'END' | 'EQ' | 'EQV' | 'ERL' |                                         
++        'ERN$' | 'ERR' | 'ERROR' | 'ERT$' |                                    
++        'ESC' | 'EXIT' | 'EXP' | 'EXTEND' |                                    
++        'FF' | 'FIELD' | 'FILE' | 'FILE$' |                                    
++        'FILESIZE' | 'FILL' | 'FILL$' | 'FILL%' |                              
++        'FIND' | 'FIX' | 'FIXED' | 'FNEND' |                                   
++        'FNEXIT' | 'FOR' | 'FORMAT$' | 'FROM' |                                
++        'FSP$' | 'FSS$' | 'GE' | 'GET' |                                       
++        'GO' | 'GOSUB' | 'GOTO' | 'GT' |                                       
++        'HT' | 'IDN' | 'IF' | 'IMP' |                                          
++        'INDEXED' | 'INPUT' | 'INSTR' | 'INT' |                                
++        'INV' | 'KEY' | 'KILL' | 'LEFT' |                                      
++        'LEFT$' | 'LEN' | 'LET' | 'LF'                                         
+   RESERVE2 =                                                                   
++        'LINE' | 'LINPUT' | 'LOC' | 'LOG' |                                    
++        'LOG10' | 'LSET' | 'MAGTAPE' | 'MAP' |                                 
++        'MAT' | 'MID' | 'MID$' | 'MOD' |                                       
++        'MODIFY' | 'MOVE' | 'NAME' | 'NEXT' |                                  
++        'NOCHANGES' | 'NODUPLICATES' | 'NOECHO' | 'NONE' |                     
++        'NOREWIND' | 'NOSPAN' | 'NOT' | 'NUL$' |                               
++        'NUM' | 'NUM$' | 'NUM1$' | 'NUM2' |                                    
++        'ON' | 'ONECHR' | 'ONERROR' | 'OPEN' |                                 
++        'OR' | 'ORGANIZATION' | 'OUTPUT' | 'PEEK' |                            
++        'PI' | 'PLACE$' | 'POS' | 'PRIMARY' |                                  
++        'PRINT' | 'PROD$' | 'PUT' | 'QUO$' |                                   
++        'RAD$' | 'RANDOM' | 'RANDOMIZE' | 'RCTRLC' |                           
++        'RCTRLO' | 'READ' | 'RECORD' | 'RECORDSIZE' |                          
++        'RECOUNT' | 'REF' | 'RELATIVE' | 'REM' |                               
++        'RESET' | 'RESTORE' | 'RESUME' | 'RETURN' |                            
++        'RIGHT' | 'RIGHT$' | 'RND' | 'RSET' |                                  
++        'SCRATCH' | 'SEG%' | 'SEQUENTIAL' | 'SGN' |                            
++        'SI' | 'SIN' | 'SLEEP' | 'SO' |                                        
++        'SP' | 'SPACE$' | 'SPAN' | 'SPEC'                                      
+    RESERVE2A =                                                                 
++        'SQR' | 'STATUS' | 'STEP' | 'STOP' |                                   
++        'STR$' | 'STREAM' | 'STRING$' | 'SUB' |                                
++        'SUBEND' | 'SUBEXIT' | 'SUM$' | 'SWAP%' |                              
++        'SYS' | 'TAB' | 'TAN' | 'TAPE' |                                       
++        'TASK' | 'TEMPORARY' | 'THEN' | 'TIME' |                               
++        'TIME$' | 'TO' | 'TRM$' | 'TRN' |                                      
++        'UNDEFINED' | 'UNLESS' | 'UNLOCK' | 'UNTIL' |                          
++        'UPDATE' | 'USEROPEN' | 'USING' | 'VAL' |                              
++        'VAL%' | 'VALUE' | 'VARIABLE' | 'VIRTUAL' |                            
++        'VT' | 'WAIT' | 'WHILE' | 'WINDOWSIZE' |                               
++        'WRITE' | 'WRKMAP' | 'XLATE' | 'XOR' | 'ZER'                           
+                                                                                
+     RESERVED = RESERVE1 | RESERVE1A | RESERVE2 | RESERVE2A                     
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE MAP FILE INTO A TABLE..                                  *        
+*----------------------------------------------------------------------*        
+         MAPTBL = TABLE(500,100)                                                
+         SYMTBL = TABLE(500,100)                                                
+MAPREAD                                                                         
+         M = MAP                                 :F(PGMREAD)                    
+         M 'M;' (BREAK('(') | REM) . S           :S(MAPSYMX)                    
+         M 'D;' BREAK('=,; ') . S                :F(MAPREAD)                    
+MAPSYMX  MAPTBL<S> = 1                           :(MAPREAD)                     
+*----------------------------------------------------------------------*        
+* NOW START READING THE SYMBOL TABLE                                   *        
+*----------------------------------------------------------------------*        
+PGMREAD  LINE = SOURCE                           :F(END)                        
+         LINE BREAK(';') . TYPE ';' REM . VAL =                                 
++                                                :($('PROC_' TYPE))             
+                                                                                
+*----------------------------------------------------------------------*        
+* IGNORE COMMENTS                                                      *        
+*----------------------------------------------------------------------*        
+PROC_C                                            :(PGMREAD)                    
+*----------------------------------------------------------------------*        
+* MAKE SURE THAT LABEL VARIABLES ARE NULLED OUT..                      *        
+*----------------------------------------------------------------------*        
+PROC_L   SYMTBL<VAL> =                            :(PGMREAD)                    
+*----------------------------------------------------------------------*        
+* PROCESS STATEMENTS                                                   *        
+*----------------------------------------------------------------------*        
+PROC_S                                                                          
+* DELETE ANY SEPERATORS                                                         
+    VAL BL #SEP BL =                                                            
+*----------------------------------------------------------------------*        
+* CHECK TO SEE IF DIM STATEMENT                                        *        
+*----------------------------------------------------------------------*        
+    VAL "DIM" #"ENSION" BL =                     :F(TOK_LOOP)                   
+DIM_LOOP                                                                        
+    VAL BREAK(AL) VARID . S #BL '(' BAL . SIZE ')' = :F(PGMREAD)                
+    SYMTBL<S> = 1                                                               
+    SYM = S '(' SIZE ')'                         :(DIM_LOOP)                    
+*----------------------------------------------------------------------*        
+* PROCESS A LINE..                                                     *        
+*----------------------------------------------------------------------*        
+TOK_LOOP                                                                        
+    VAL BREAK(AL) VARID . S =                    :F(PGMREAD)                    
+    S = TRIM(S)                                                                 
+    S BL =                                                                      
+    IDENT(S,'CALL')                              :S(TOK_CALL)                   
+    S POS(0) RESERVED RPOS(0)                    :S(TOK_LOOP)                   
+    S 'STR.LIT.' SPAN(NU) '$'                    :S(TOK_LOOP)                   
+    IDENT(MAPTBL<S>)                             :F(TOK_LOOP)                   
+    IDENT(SYMTBL<S>)                             :F(TOK_LOOP)                   
+*---                                                                            
+    SYMTBL<S> = 1                                                               
+    SYM = S                                      :(TOK_LOOP)                    
+TOK_CALL                                                                        
+    VAL BREAK(AL) VARID =                        :(TOK_LOOP)                    
+END                                                                             

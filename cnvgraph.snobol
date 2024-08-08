@@ -1,0 +1,418 @@
+-TITLE   CNVGRAPH                                                               
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* PROCESS GOSUB AND RETURN STATEMENTS                                  *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - INPUT FROM CNVNEST     RECFM=F LRECL=500            *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    &DUMP = 1                                                                   
+    &TRIM = 1                                                                   
+    &ANCHOR = 1                                                                 
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+                                                                                
+    DATA('TEXT(TYPE,VALUE,NEST,NEXT,ID,REF,BTYPE,XREF,INBLK)')                  
+    DATA('XREFR(VAL,TXTP)')                                                     
+    DEFINE('INSERT(C,T,V)N')                                                    
+    DEFINE('MARK(C,BLK,EXITNAM)R,N,I,X,MSG,NEWL')                               
+    DEFINE('GETNEXT(C)N')                                                       
+    DEFINE('GETTEXT()IN,L,T,V')                  :(GETTEXT_END)                 
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT STATEMENT OR LABEL                                   *        
+*----------------------------------------------------------------------*        
+GETNEXT                                                                         
+    C = IDENT(C) CURRENT                                                        
+    N = C                                                                       
+GETNEXTL                                                                        
+    N = NEXT(N)                                                                 
+    IDENT(N)                                     :S(FRETURN)                    
+    IDENT(TYPE(N),'C')                           :S(GETNEXTL)                   
+    GETNEXT = N                                  :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . L ';' BREAK(';') . T ';' REM . V                            
+    GETTEXT = TEXT(T,V,L,NULL,NULL,NULL,NULL,NULL,NULL)  :(RETURN)              
+GETTEXT_END                                                                     
+                                                                                
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+DECR $VAR = $VAR - 1                                                            
+    DECR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+    BL = #SPAN(' ')                                                             
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    IDENTIFIER = ANY(AL) #SPAN(AL NU '._')                                      
+*----------------------------------------------------------------------*        
+* DEFINE SOME TABLES                                                   *        
+*----------------------------------------------------------------------*        
+    BLOCKNUM = 0                                                                
+    LABELS = TABLE()                                                            
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE CODE..                                                   *        
+*----------------------------------------------------------------------*        
+    HEAD = GETTEXT()                                                            
+    CURRENT = HEAD                                                              
+READLOOP                                                                        
+    NEXT(CURRENT) = GETTEXT()                    :F(ENDREAD)                    
+    CURRENT = NEXT(CURRENT)                                                     
+    LABELS<VALUE(CURRENT)> = IDENT(TYPE(CURRENT),'L') CURRENT                   
++                                                :(READLOOP)                    
+ENDREAD                                                                         
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* FIND ALL TARGETS FOR GOTOS AND GOSUBS BY LINE                        *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+    BTYPE(HEAD) = .LEADER                                                       
+    ID(HEAD) = INCR(.BLOCKNUM)                                                  
+BUILDGREF                                                                       
+    VALUE(CURRENT) #SEP ('GOTO' | 'GOSUB') . ACTION ' ' :F(NEXTGREF)            
+    VALUE(CURRENT) #SEP *ACTION BL (BREAK(' ') | REM) . R                       
+    GREF = LABELS<R>                                                            
+    ID(GREF) = IDENT(ID(GREF)) INCR(.BLOCKNUM)                                  
+    BTYPE(GREF) = .LEADER                                                       
+    REF(GREF) = IDENT(REF(GREF)) TABLE()                                        
+    ITEM( REF(GREF), CURRENT) = ACTION                                          
+    LABELS<R> = GREF                                                            
+    IDENT(ACTION,'GOSUB')                        :F(NEXTGREF)                   
+    VALUE(CURRENT) #SEP . X 'GOSUB' BL REM = X 'PERFORM ' R                     
++      '-PARA THRU ' R '-PARA-EXIT'                                             
+NEXTGREF CURRENT = GETNEXT()                      :S(BUILDGREF)                 
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* FIND ALL DROPTHRU REFERENCES                                         *        
+*                                                                      *        
+* RULES:                                                               *        
+*                                                                      *        
+*I  IF THE PREV STATEMENT IS NOT A TERM, AND NOT NESTED WITHIN AN IF   *        
+*   STATEMENT THEN BLOCK IS REFERENCED AS A DROPTHRU                   *        
+*II IF FOLLOWING BLOCK ENDED WITH A NON TERMINAL IF STATEMENT THEN     *        
+*   THE BLOCK IS REFERENCED AS A DROPTHRU                              *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+    PREV =                                                                      
+    PREVLVL = 0                                                                 
+    IFNEST =                                                                    
+* ANYTHING THAT CAN PREVENT A DROPTHRU                                          
+    TERM = 'GOTO' | 'RESUME' | 'RETURN' | 'STOP' | ('END' BL RPOS(0))           
++     | 'EXIT' | ('FN' #BL 'END' BL RPOS(0))                                    
+DROPLOOP                                                                        
+    IDENT(TYPE(CURRENT),'L')                     :F(NEXTDROP)                   
+    IDENT(PREV)                                  :S(NEXTDROP)                   
+*----------------------------------------------------------------------*        
+*  WE ARE AT A BOUNDARY BETWEEN TWO BLOCKS..                           *        
+*----------------------------------------------------------------------*        
+* IF NEST EQ 0 AND A TERM THEN NEXTDROP                                         
+    VALUE(PREV) EQ(NEST(PREV),0) #SEP TERM       :F(DROP_L1)                    
+    BTYPE(CURRENT) = .LEADER                                                    
+    ID(CURRENT) = IDENT(ID(CURRENT)) INCR(.BLOCKNUM) :(NEXTDROP)                
+DROP_L1                                                                         
+    EQ(NEST(PREV),0)                             :S(DROPTHRU)                   
+                                                                                
+* IF IFNEST IS NULL THEN A DROPTHRU                                             
+    IDENT(IFNEST)                                :S(DROPTHRU)                   
+    IFNEST = GT(PREVLVL,0) IFNEST DUPL(")",PREVLVL)                             
+* REDUCE IFNEST.                                                                
+    &ANCHOR = 0                                                                 
+RED_1 IFNEST ("()" | "(TERM)" | "(,TERM)" | "(,)" | "(TERM,)" )                 
++          ("(" | "TERM") . X = X                :S(RED_1)                      
+RED_2 IFNEST "(TERM,TERM)" ("(" | "TERM") . X = X :S(RED_2)                     
+RED_3 IFNEST "(TERM)" = "(TERM,)"                :S(RED_3)                      
+RED_4 IFNEST "(TERM,TERM)" = "TERM"              :S(RED_4)                      
+RED_5 IFNEST "(,TERM)" | "(TERM,)" =             :S(RED_5)                      
+    &ANCHOR = 1                                                                 
+* IF IFNEST ISNOT EQUAL TO TERM THEN WE HAVE A DROPTHRU                         
+    IDENT(IFNEST,"TERM")                         :F(DROPTHRU)                   
+* OTHERWISE MARK THE NEXT STATEMENT AS A LEADER WITHOUT ANY REFERENCES!         
+    BTYPE(CURRENT) = .LEADER                                                    
+    ID(CURRENT) = IDENT(ID(CURRENT)) INCR(.BLOCKNUM) :(NEXTDROP)                
+DROPTHRU                                                                        
+    GREF = LABELS<VALUE(CURRENT)>                                               
+    ID(GREF) = IDENT(ID(GREF)) INCR(.BLOCKNUM)                                  
+    BTYPE(GREF) = .LEADER                                                       
+    REF(GREF) = IDENT(REF(GREF)) TABLE()                                        
+    ITEM( REF(GREF), PREV) = .DROPTHRU                                          
+    LABELS<VALUE(CURRENT)> = COPY(GREF)                                         
+-SPACE                                                                          
+NEXTDROP                                                                        
+*----------------------------------------------------------------------*        
+* FOR EACH LINE CHECK THE NESTING                                      *        
+* 1 IF NESTING LEVEL IS ZERO AND IFNEST HAS BEEN APPENDED TO           *        
+*     PREVLVL AND IFNEST ARE SET TO NULL                               *        
+* 2 IF NESTING HAS INCREASED THEN APPEND AN "("                        *        
+* 3 IF NESTING HAS DECREASED THEN APPEND THE DIFFERENCE IN NEST LEVELS *        
+*     IN ")"                                                           *        
+* 4 IF CURRENTLY SETTING ON AN "ELSE" APPEND A COMMA                   *        
+* 5 IF CURRENTLY SETTING ON A TERMINATOR THEN APPEND "TERM"            *        
+*----------------------------------------------------------------------*        
+    PREVLVL = DIFFER(IFNEST) EQ(NEST(CURRENT),0)                                
+    IFNEST = DIFFER(IFNEST) EQ(NEST(CURRENT),0)                                 
+    IFNEST = EQ(NEST(CURRENT),PREVLVL + 1) IFNEST "("                           
+    IFNEST = LT(NEST(CURRENT),PREVLVL)                                          
++       IFNEST DUPL(")",PREVLVL - NEST(CURRENT))                                
+                                                                                
+    VALUE(CURRENT) #SEP 'ELSE'                   :F(NEXTDROP_1)                 
+    IFNEST = IFNEST ","                                                         
+NEXTDROP_1                                                                      
+    VALUE(CURRENT) #SEP TERM                     :F(NEXTDROP_2)                 
+    IFNEST = IFNEST "TERM"                                                      
+NEXTDROP_2                                                                      
+    PREVLVL = NEST(CURRENT)                                                     
+    PREV = CURRENT                                                              
+    CURRENT = GETNEXT()                          :S(DROPLOOP)                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* COMBINE BLOCKS                                                       *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+    PREV = CURRENT                                                              
+    CURRENT = GETNEXT()                                                         
+COMBINE                                                                         
+    IDENT(BTYPE(CURRENT),.LEADER)                :F(NXTCOMBINE)                 
+*----------------------------------------------------------------------*        
+* IF ONLY ONE REFERENCE AND THAT IS OF THE PREVIOUS BLOCK THEN COMBINE *        
+*----------------------------------------------------------------------*        
+    R = REF(CURRENT)                                                            
+    R = CONVERT(R,'ARRAY')                       :F(NXTCOMBINE)                 
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    EQ(N,1)                                      :F(NXTCOMBINE)                 
+    IDENT(R<1,2>,.DROPTHRU)                      :F(NXTCOMBINE)                 
+    R = XREF(CURRENT)                                                           
+    REF(CURRENT) =                                                              
+    ID(CURRENT) =                                                               
+    BTYPE(CURRENT) =                                                            
+NXTCOMBINE                                                                      
+    PREV = IDENT(BTYPE(CURRENT),.LEADER) CURRENT                                
+    CURRENT = GETNEXT()                          :S(COMBINE)                    
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* SCAN THRU AND MARK EACH LINE WITH IT'S BLOCK NUMBER..                *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+    BLKTBL = TABLE()                                                            
+BLOCKIT                                                                         
+* IF CURRENT BLOCK IS A LEADER THEN POINT TO THIS BLOCK                         
+    BLK = IDENT(BTYPE(CURRENT),.LEADER) ID(CURRENT)                             
+    BLKTBL<BLK> = IDENT(BTYPE(CURRENT),.LEADER) CURRENT                         
+    ID(CURRENT) = BLK                                                           
+    CURRENT = GETNEXT()                          :S(BLOCKIT)                    
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOW BUILD THE BACK XREF                                              *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+XREFLOOP                                                                        
+    IDENT(BTYPE(CURRENT),.LEADER)                 :F(NEXTXREF)                  
+    R = REF(CURRENT)                                                            
+    R = CONVERT(R,'ARRAY')                        :F(NEXTXREF)                  
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    I = 1                                                                       
+XREFILOOP                                                                       
+    IDENT(R<I,2>,'GOSUB')                        :S(NXTIREF)                    
+    B = R<I,1>                                                                  
+    X = BLKTBL<ID(B)>                                                           
+    XREF(X) = IDENT(XREF(X)) TABLE()                                            
+    ITEM(XREF(X),ID(CURRENT)) = XREFR(R<I,2>,CURRENT)                           
+NXTIREF                                                                         
+    INCR(.I)                                                                    
+    LE(I,N)                                      :S(XREFILOOP)                  
+NEXTXREF                                                                        
+    CURRENT = GETNEXT()                          :S(XREFLOOP)                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* FIND A TARGET FOR A GOSUB AND CALL MARK                              *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    CURRENT = IDENT(TYPE(CURRENT),'C') GETNEXT()                                
+MARKPGM                                                                         
+    IDENT(BTYPE(CURRENT),.LEADER)                :F(NEXTMARK)                   
+    R = REF(CURRENT)                                                            
+    R = CONVERT(R,'ARRAY')                       :F(NEXTMARK)                   
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    I = 1                                                                       
+MARKLOOP                                                                        
+    IDENT(R<I,2>,'GOSUB')                        :S(MARKABLOCK)                 
+NEXTIMARK                                                                       
+    INCR(.I)                                                                    
+    LE(I,N)                                      :S(MARKLOOP)F(NEXTMARK)        
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* MARK ALL REFERENCES FROM THIS BLOCK                                  *        
+* START AT THE CURRENT LOCATION AND SCAN UNTIL WE FIND A LEADER        *        
+* THAT IS NOT IN OUR BLOCK, INSERT A LABEL.                            *        
+*----------------------------------------------------------------------*        
+MARKABLOCK                                                                      
+    MARK(CURRENT,ID(CURRENT),VALUE(CURRENT))                                    
+    PREV = CURRENT                                                              
+    R = GETNEXT(CURRENT)                                                        
+MARKLBLL                                                                        
+    IDENT(BTYPE(R),.LEADER)                      :F(NEXTMARKLBL)                
+    EQ(INBLK(R),ID(CURRENT))                     :F(NEXTMARKLBLX)               
+NEXTMARKLBL                                                                     
+    PREV = R                                                                    
+    R = GETNEXT(R)                               :S(MARKLBLL)                   
+NEXTMARKLBLX                                                                    
+    INSERT(PREV,'L',VALUE(CURRENT) '-PARA-EXIT') :(NEXTMARK)                    
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* FIND NEXT SUBROUTINE                                                 *        
+*----------------------------------------------------------------------*        
+NEXTMARK                                                                        
+    CURRENT = GETNEXT()                          :S(MARKPGM)                    
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* PRINT A MAP OF THE PROGRAM (THIS BLOCK IS OPTIONAL)                  *        
+*----------------------------------------------------------------------*        
+GENPERFORM                                                                      
+    CURRENT = HEAD                                                              
+GENLOOP                                                                         
+    IDENT(TYPE(CURRENT),'C')                      :S(NEXTOUT)                   
+    IDENT(BTYPE(CURRENT),.LEADER)                 :F(NOTLEADER)                 
+    OUTPUT = ' '                                                                
+    OUTPUT = '--- NEW BLOCK --'                                                 
+    OUTPUT = '==>> REFERENCES BY <<=='                                          
+    R = REF(CURRENT)                                                            
+    R = CONVERT(R,'ARRAY')                       :F(NOTREFED)                   
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    I = 1                                                                       
+REFLOOP                                                                         
+    OUTPUT = 'REFED BY: ' R<I,2> ' IN <' ID(R<I,1>) '>'                         
++        VALUE(R<I,1>)                                                          
+    INCR(.I)                                                                    
+    LE(I,N)                                      :S(REFLOOP)                    
+NOTREFED                                                                        
+    OUTPUT = '==>> REFERENCES TO <<=='                                          
+    R = XREF(CURRENT)                                                           
+    R = CONVERT(R,'ARRAY')                       :F(NOTXREFED)                  
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    I = 1                                                                       
+REFXLOOP                                                                        
+    OUTPUT = 'REFERS BY ' VAL(R<I,2>) ' TO BLOCK#' R<I,1> ' '                   
++               VALUE(TXTP(R<I,2>))                                             
+    INCR(.I)                                                                    
+    LE(I,N)                                      :S(REFXLOOP)                   
+NOTXREFED                                                                       
+NOTLEADER                                                                       
+    OUT =                                                                       
+    OUT = IDENT(BTYPE(CURRENT),.LEADER) 'BLOCK#' ID(CURRENT)                    
+    OUT = DIFFER(BTYPE(CURRENT),.LEADER) ID(CURRENT)                            
+    OUT = DIFFER(INBLK(CURRENT)) INBLK(CURRENT) '>:<' OUT                       
+    OUTPUT = TYPE(CURRENT) ' <' OUT '> ' VALUE(CURRENT)                         
+NEXTOUT                                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    DIFFER(CURRENT)                              :S(GENLOOP)                    
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOW PUNCH THE DATA TO CODE                                           *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+PUNLOOP                                                                         
+    IDENT(TYPE(CURRENT),'L')                     :F(NXTPUNOUT)                  
+    VALUE(CURRENT) SPAN(NU) '-PARA-EXIT'         :S(NXTPUNOUT)                  
+    IDENT(BTYPE(CURRENT),.LEADER)                :S(NXTPUNOUT)                  
+* COMMENT OUT LABELS THAT ARE NOT REFERENCED..                                  
+    VALUE(CURRENT) = '*' VALUE(CURRENT)                                         
+NXTPUNOUT                                                                       
+    CODE = NEST(CURRENT) ';' TYPE(CURRENT) ';' VALUE(CURRENT)                   
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(PUNLOOP)S(END)              
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* SUBROUTINES AND SUCH                                                 *        
+*----------------------------------------------------------------------*        
+*----------------------------------------------------------------------*        
+* MARK ALL REFERENCES THAT IS ROUTINE MAKES WITH A BLOCK NUMBER        *        
+* WARNING : RECURSIVE ROUTINE                                          *        
+*----------------------------------------------------------------------*        
+MARK                                                                            
+    INBLK(C) = BLK                                                              
+*----------------------------------------------------------------------*        
+* SCAN THIS BLOCK AND CHANGE ANY RETURNS TO GOTO EXITNAM-PARA-EXIT     *        
+*----------------------------------------------------------------------*        
+    R = GETNEXT(C)                                                              
+MARK_RETL                                                                       
+    IDENT(BTYPE(R),.LEADER)                      :S(XIT_MRET)                   
+    IDENT(TYPE(R),'S')                           :F(NXT_MRET)                   
+    VALUE(R) (#SEP BL) . X 'RETURN' = X 'GOTO ' EXITNAM '-PARA-EXIT'            
+NXT_MRET R = GETNEXT(R)                          :S(MARK_RETL)                  
+XIT_MRET                                                                        
+    R = XREF(C)                                                                 
+    R = CONVERT(R,'ARRAY')                       :F(MARK_DONE)                  
+    PROTOTYPE(R) BREAK(',') . N                                                 
+    I = 1                                                                       
+MARKL                                                                           
+    X = TXTP(R<I,2>)                                                            
+    EQ( INBLK(X), BLK)                           :S(NXTMARKL)                   
+    DIFFER( INBLK(X) )                           :S(TWOREF)                     
+    MARK(X,BLK,EXITNAM)                                                         
+NXTMARKL                                                                        
+    INCR(.I)                                                                    
+    LE(I,N)                                      :S(MARKL)                      
+MARK_DONE                                        :(RETURN)                      
+*----------------------------------------------------------------------*        
+* RAN INTO A DOUBLE REFERENCE FOR A BLOCK.. REPORT IT..                *        
+*----------------------------------------------------------------------*        
+TWOREF                                                                          
+    MSG = 'W;PARAGRAPH BRANCHES INTO ANOTHER PERFORMED PARAGRAPH'               
+    NEWL = INSERT( BLKTBL<BLK>,'C',MSG)                                         
+    MSG = 'W;EXIT LOGIC INCORRECT - SEE ORIGINAL BASIC CODE'                    
+    NEWL = INSERT( NEWL,'C',MSG)                                                
+    MSG = 'W;REFERENCE IS TO A BLOCK OF CODE STARTING AT LBL ' VALUE(X)         
+    NEWL = INSERT( NEWL,'C',MSG)                                                
+    OUTPUT = BLK ' BRANCHING INTO PERFORMED PARAGRAPH ' INBLK(X)                
++   :(NXTMARKL)                                                                 
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* INSERT A LINE AFTER C                                                *        
+*----------------------------------------------------------------------*        
+INSERT                                                                          
+    N = COPY(C)                                                                 
+    TYPE(N) = T                                                                 
+    VALUE(N) = V                                                                
+    NEST(N) = NEST(C)                                                           
+    NEST(N) = IDENT(T,'L') 0                                                    
+    ID(N) =                                                                     
+    REF(N) =                                                                    
+    BTYPE(N) =                                                                  
+    XREF(N) =                                                                   
+    INBLK(N) =                                                                  
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERT = N                                   :(RETURN)                      
+END                                                                             

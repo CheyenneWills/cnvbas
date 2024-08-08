@@ -1,0 +1,110 @@
+-TITLE   CNVBAS                                                                 
+-CODE                                                                           
+-LIST LEFT                                                                      
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* RENUMBER THE PARAGRAPH NAMES FROM THE CONVERTOR.                     *        
+*----------------------------------------------------------------------*        
+    &TRIM = 1                                                                   
+    &DUMP = 1                                                                   
+    &ANCHOR = 1                                                                 
+    INPUT(.SOURCE,'SOURCE')                                                     
+    PARATBL = TABLE(100)                                                        
+    DEFINE('NEWNAME(OLD)NEW,NUM1,TYPE')                                         
+    LABEL = 100                                                                 
+    INCR  = 100                                                                 
+*----------------------------------------------------------------------*        
+* HANDY PATTERNS..                                                     *        
+*----------------------------------------------------------------------*        
+    BL = SPAN(' ') | NULL                                                       
+    NU = '0123456789'                                                           
+                                                                                
+    LABELPARA = SPAN(NU) '-PARA'                                                
+    EXITPARA  = SPAN(NU) '-PARA-EXIT'                                           
+    FORPARA   = SPAN(NU) '-FOR-PARA'                                            
+    FOR1PARA  = SPAN(NU) '-FORLBL'                                              
+    WHILEPARA = SPAN(NU) '-WHILE-PARA'                                          
+    WHILE1PARA = SPAN(NU) '-WHILE'                                              
+    UNTILPARA = SPAN(NU) '-UNTIL-PARA'                                          
+    UNTIL1PARA = SPAN(NU) '-UNTIL'                                              
+    NEXTPARA  = SPAN(NU) '-NEXTEXIT'                                            
+    IFPARA    = SPAN(NU) '-IF-PARA'                                             
+    ENDIFPARA = SPAN(NU) '-ENDIF-PARA'                                          
+                                                                                
+                                                                                
+    PARA = EXITPARA | LABELPARA | FORPARA | FOR1PARA | WHILEPARA |              
++        WHILE1PARA | UNTILPARA | UNTIL1PARA | NEXTPARA | IFPARA |              
++        ENDIFPARA                                                              
+                                                                                
+*----------------------------------------------------------------------*        
+*   IGNORE THE ID AND DATA DIVISIONS.                                  *        
+*----------------------------------------------------------------------*        
+READ1 LINE = SOURCE                              :F(ERROR1)                     
+* STRIP OFF LEADING BLANKS..                                                    
+     LINE BL =                                                                  
+     LINE 'PROCEDURE DIVISION.'                  :F(READ1)                      
+*----------------------------------------------------------------------*        
+* WE ARE NOW IN THE PROCEDURE DIVISION                                 *        
+*----------------------------------------------------------------------*        
+READ2 LINE = SOURCE                              :F(PHASE2)                     
+    LINE BL =                                                                   
+    LINE '*'                                     :S(READ2)                      
+    LINE PARA . PARANAME BL (RPOS(0) | '.')      :F(READ2)                      
+    PARATBL<PARANAME> = NEWNAME(PARANAME)        :(READ2)                       
+*----------------------------------------------------------------------*        
+* NOW START THE SUBSITUTION..                                          *        
+*----------------------------------------------------------------------*        
+PHASE2                                                                          
+    REWIND('SOURCE')                                                            
+READ3    LINE = SOURCE                                                          
+     PUNCH = LINE                                                               
+* STRIP OFF LEADING BLANKS..                                                    
+     LINE BL =                                                                  
+     LINE BL 'PROCEDURE DIVISION.'                  :F(READ3)                   
+*----------------------------------------------------------------------*        
+* NOW SITTING IN THE PROCEDURE DIVISION..                              *        
+*----------------------------------------------------------------------*        
+READ4 LINE = SOURCE                              :F(END)                        
+     LINE BL '*'                                 :S(PUNOUT)                     
+     &ANCHOR = 0                                                                
+     LINE 'GO TO' BL PARA . PARANAME = 'GO TO ' PARATBL<PARANAME>               
+     LINE 'PERFORM' BL PARA . PARANAME = 'PERFORM ' PARATBL<PARANAME>           
+     LINE 'THRU' BL PARA . PARANAME = 'THRU ' PARATBL<PARANAME>                 
+     &ANCHOR = 1                                                                
+     LINE BL . A PARA . PARANAME (BL (RPOS(0) | '.')) . B =                     
++        A PARATBL<PARANAME> B                                                  
+PUNOUT PUNCH = LINE                              :(READ4)                       
+*----------------------------------------------------------------------*        
+* RENAME A PARAGRAPH LABEL TO THE NEW FORMAT                           *        
+*----------------------------------------------------------------------*        
+NEWNAME                                                                         
+     OLD SPAN(NU) REM . TYPE                     :($('LBL' TYPE))               
+LBL-PARA                                                                        
+     OLD SPAN(NU) . NUM1                                                        
+     NEWNAME = LABEL '-PARA-' NUM1               :(RETURN1)                     
+LBL-PARA-EXIT                                                                   
+     NEWNAME = LABEL '-PARA-EXIT'                :(RETURN1)                     
+LBL-FOR-PARA                                                                    
+     NEXTLABEL = '-FOR-EXIT'                                                    
+     NEWNAME = LABEL '-FOR-PARA'                 :(RETURN1)                     
+LBL-FORLBL                                                                      
+     NEWNAME = LABEL '-FOR'                      :(RETURN1)                     
+LBL-WHILE-PARA                                                                  
+     NEXTLABEL = '-WHILE-EXIT'                                                  
+     NEWNAME = LABEL '-WHILE-PARA'               :(RETURN1)                     
+LBL-WHILE                                                                       
+     NEWNAME = LABEL '-WHILE'                    :(RETURN1)                     
+LBL-UNTIL-PARA                                                                  
+     NEXTLABEL = '-UNTIL-EXIT'                                                  
+     NEWNAME = LABEL '-UNTIL-PARA'               :(RETURN1)                     
+LBL-UNTIL                                                                       
+     NEWNAME = LABEL '-UNTIL'                    :(RETURN1)                     
+LBL-NEXTEXIT                                                                    
+     NEWNAME = LABEL NEXTLABEL                   :(RETURN1)                     
+LBL-IF-PARA                                                                     
+     NEWNAME = LABEL '-IF-PARA'                  :(RETURN1)                     
+LBL-ENDIF-PARA                                                                  
+     NEWNAME = LABEL '-ENDIF-PARA'               :(RETURN1)                     
+RETURN1                                                                         
+     LABEL = LABEL + INCR                        :(RETURN)                      
+END                                                                             

@@ -1,0 +1,505 @@
+-TITLE   CNVGEN                                                                 
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* GENERATE THE ACTUAL COBOL STATEMENTS NOW..                           *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    &STLIMIT = 900000                                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    INPUT(.FILES,'FILE')                                                        
+    INPUT(.STRING,'STRING')                                                     
+    INPUT(.COMMENT,'COMMENT')                                                   
+    INPUT(.SYM,'SYM')                                                           
+    INPUT(.MAP,'MAP')                                                           
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+                                                                                
+*----------------------------------------------------------------------*        
+* DEFINE DATA TYPES..                                                  *        
+*----------------------------------------------------------------------*        
+    DATA('TEXT(TYPE,VALUE,NEST,FLAG,NEXT)')                                     
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES                                                   *        
+*----------------------------------------------------------------------*        
+    DEFINE('STRTOLIT(LINE)START,A,B,S')                                         
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('DECR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                                                      
+    DEFINE('PUTAMAP(M)ID,T,C,VAL,D,A,B,LEN,PIC')                                
+    DEFINE('UNIQUE(VAR,TBL)I,TVAR,C')                                           
+    DEFINE('CONVERTNAME(VARIABLE)A,TYPE,OLDNAME')                               
+    DEFINE('GETSOURCE()LINE,FLAG,NEST,TYPE,VALUE')                              
+    DEFINE('CVRTLINE(LINE)NEWLINE,A,B')                                         
+    OPSYN('#','OPT',1)                                                          
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    BL = SPAN(' ')                                                              
+    EOS = #BL RPOS(0)                                                           
+    RELOP = '==' | '<>' | '><' | '<=' | '>=' | '^=' | '=' | '>' | '<'           
+    IDENTIFIER = ANY(AL) (SPAN(AL NU '._') | '')                                
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+    INTLIT =  #'-' SPAN(NU) '%'                                                 
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+                                                                                
+    ARRAY1REF = (INTID | INTLIT | SPAN(NU)) #BL                                 
+    ARRAY2REF = #BL ARRAY1REF #(',' *ARRAY2REF)                                 
+    ARRAY3REF = #BL '(' BAL #ARRAY2REF #BL ')'                                  
+                                                                                
+    STRIDREF = STRID #ARRAY3REF                                                 
+    ASGN1PAT = VARID #ARRAY3REF                                                 
+    ASGN2PAT = (VARID #ARRAY3REF) | NUMLIT                                      
+    ASGN3PAT = ASGN1PAT #(#BL ',' #BL *ASGN3PAT)                                
+*----------------------------------------------------------------------*        
+* DEFINE WHAT AN EXPRESSION IS..                                       *        
+*----------------------------------------------------------------------*        
+    EXP = ARB #NOTANY('$') ARB ANY("+-*/^()") ARB #NOTANY('$')                  
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* READ IN THE MAP, SYMBOL, COMMENT AND STRING FILES..                  *        
+*----------------------------------------------------------------------*        
+    DATA('LIST(VALUE,NEXT)')                                                    
+    STRTBL = TABLE(100,25)                                                      
+    CMNTBL = TABLE(300,50)                                                      
+    NAMETBL = TABLE(300,50)                                                     
+    NEWSYM  = TABLE(300,50)                                                     
+                                                                                
+    MAPHEAD = LIST(MAP)                          :F(XMAPREAD)                   
+    MAPC = MAPHEAD                                                              
+READMAP NEXT(MAPC) = LIST(MAP)                   :F(READCMNT)                   
+    MAPC = NEXT(MAPC)                            :(READMAP)                     
+XMAPREAD                                                                        
+                                                                                
+READCMNT IN = COMMENT                            :F(READSTR)                    
+    IN BREAK(';') . I ';' REM . C                                               
+    CMNTBL<I> = C                                :(READCMNT)                    
+                                                                                
+*----------------------------------------------------------------------*        
+* READ THE STRING TABLE, CONVERT IMBEDDED QUOTES TO DOUBLE QUOTES..    *        
+*----------------------------------------------------------------------*        
+READSTR IN = STRING                              :F(INITDONE)                   
+    IN BREAK(';') . I ';' REM . C                                               
+    C = IDENT(C) " "                                                            
+    XX = RPOS(0)                                                                
+DBLQUOTE C (*XX ARB) . Y "'" = Y "''"            :F(DBLX)                       
+    XX = Y "''"                                  :(DBLQUOTE)                    
+    C "'" SPAN(' ') "'" = ' SPACES '                                            
+DBLX STRTBL<I> = "'" C "'"                       :(READSTR)                     
+                                                                                
+INITDONE                                                                        
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOW START GENERATING CODE..                                          *        
+*----------------------------------------------------------------------*        
+    CODE =  'IDENTIFICATION DIVISION.'                                          
+    CODE =  '* OUTPUT FROM BASIC CONVERTOR V3-0.'                               
+    CODE =  'PROGRAM-ID. XXXX'                                                  
+    CODE =  'AUTHOR. BASCONV.'                                                  
+    CODE =  'INSTALLATION.'                                                     
+    CODE =  'DATE-WRITTEN. '                                                    
+    CODE =  'DATE-COMPILED. '                                                   
+    CODE =  'ENVIRONMENT DIVISION.'                                             
+    CODE =  'CONFIGURATION SECTION.'                                            
+    CODE =  'SOURCE-COMPUTER. IBM-S36.'                                         
+    CODE =  'OBJECT-COMPUTER. IBM-S36.'                                         
+    CODE =  'INPUT-OUTPUT SECTION.'                                             
+*----------------------------------------------------------------------*        
+* PUNCH THE FILE CONTROL..                                             *        
+*----------------------------------------------------------------------*        
+    CODE = 'FILE-CONTROL.'                                                      
+READFILE LINE = FILES                            :F(ENDFILE)                    
+                                                                                
+    LINE BREAK(';') . ID ';'                                                    
++      BREAK(';') . NUM ';'                                                     
++      BREAK(';') . IO ';'                                                      
++      BREAK(';') . ORG ';'                                                     
++      BREAK(';') . ACC ';'                                                     
++      BREAK(';') . RECSZ ';'                                                   
++      BREAK(';') . KEY ';'                                                     
++      REM . MAPNM                                                              
+                                                                                
+       ID = STRTOLIT(ID)                                                        
+       CODE = 'SELECT FILE-' NUM                                                
+       CODE = 'ASSIGN TO ' ID                                                   
+       DIFFER(ORG)                               :F(NO_ORG)                     
+       CODE = '* BASIC FILE ORGANIZATION WAS ' ORG                              
+       ORG BREAK('.') . ORG1                                                    
+       CODE = 'ORGANIZATION IS ' ORG1                                           
+       ORG1 = DIFFER(ORG1,'SEQUENTIAL') '???'                                   
+       CODE = 'ACCESS IS ' ORG                   :(ORG_CONT)                    
+NO_ORG CODE = 'ORGANIZATION IS SEQUENTIAL'                                      
+       CODE = 'ACCESS IS SEQUENTIAL'                                            
+ORG_CONT                                                                        
+       &ANCHOR = 0                                                              
+       KEY '.DUPLICATES' = '.WITH DUPLICATES'                                   
+       KEY '.' =                                                                
+       &ANCHOR = 1                                                              
+       CODE = DIFFER(KEY) 'RECORD KEY IS ' KEY                                  
+       CODE = '.'                                :(READFILE)                    
+ENDFILE                                                                         
+* REWIND THE FILES BACK TO THE BEGINING..                                       
+       REWIND('FILE')                                                           
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* START THE DATA DIVISION..                                            *        
+*----------------------------------------------------------------------*        
+    CODE = 'DATA DIVISION.'                                                     
+*----------------------------------------------------------------------*        
+* FILE SECTION..                                                       *        
+*----------------------------------------------------------------------*        
+       LINE = FILES                              :F(FILEEND)                    
+       CODE = 'FILE SECTION.'                    :(GETFILE)                     
+FILEREAD LINE = FILES                            :F(FILEEND)                    
+GETFILE LINE BREAK(';') . ID ';'                                                
++      BREAK(';') . NUM ';'                                                     
++      BREAK(';') . IO ';'                                                      
++      BREAK(';') . ORG ';'                                                     
++      BREAK(';') . ACC ';'                                                     
++      BREAK(';') . RECSZ ';'                                                   
++      BREAK(';') . KEY ';'                                                     
++      REM . MAPNM                                                              
+                                                                                
+       CODE = 'FD FILE-' NUM                                                    
+       CODE = DIFFER(RECSZ) 'RECORD CONTAINS ' RECSZ ' CHARACTERS'              
+       CODE = '.'                                                               
+       IDENT(MAPNM)                              :S(FILEREAD)                   
+       CODE = '* FILE MAPPED BY ' MAPNM                                         
+       IDENT(MAPHEAD)                            :S(FILEREAD)                   
+* FIND ALL THE MAPS ASSOCIATED WITH THIS FILE..                                 
+       MAPC = MAPHEAD                                                           
+       INFD = 0                                                                 
+FINDFMAP                                                                        
+       VALUE(MAPC) ('M;' | 'FM;') *MAPNM RPOS(0) :F(NEXTMAPC)                   
+       MAPC = PUTAMAP(MAPC)                      :(NEXTMAPX)                    
+NEXTMAPC                                                                        
+       MAPC = NEXT(MAPC)                                                        
+NEXTMAPX                                                                        
+       IDENT(MAPC)                             :F(FINDFMAP)S(FILEREAD)          
+FILEEND                                                                         
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* DUMP THE DATA DIVISION                                               *        
+*----------------------------------------------------------------------*        
+    CODE = 'WORKING-STORAGE SECTION.'                                           
+* DUMP ALL MAPS THAT ARE NOT ASSOCIATED WITH A FILE.                            
+       MAPC = MAPHEAD                                                           
+FINDMAP                                                                         
+       IDENT(MAPC)                               :S(NEXTDMAPX)                  
+       VALUE(MAPC) 'M;'                          :F(NEXTDMAP)                   
+       INFD = 1                                                                 
+       MAPC = PUTAMAP(MAPC)                      :(FINDMAP)                     
+NEXTDMAP                                                                        
+       MAPC = NEXT(MAPC)                         :(FINDMAP)                     
+NEXTDMAPX                                                                       
+                                                                                
+                                                                                
+* DUMP ALL OTHER SYMBOLS NOW..                                                  
+       CODE = '01 UNMAPPED-BASIC-VARIABLES.'                                    
+NXTSYM   LINE = SYM                              :F(SYMEND)                     
+       LINE BREAK('(') . ID '(' BAL . DIM ')'    :F(NOTDIM)                     
+       T =                                                                      
+       ID RTAB(1) ('$' | '%') . T                                               
+* HANDLE AN ARRAY..                                                             
+* SEE IF ITS A MULTI DIMENSIONED ARRAY                                          
+       DIM BREAK(',') . DIM1 ',' REM . DIM2      :S(MULTIDIM)                   
+       DIM SPAN(NU) . DIM                                                       
+       C = CONVERTNAME(ID)                                                      
+       NAMETBL<C> = 1                            :($('DIM1' T))                 
+DIM1%  CODE = '02 ' C ' PIC 9 OCCURS ' DIM ' TIMES .' :(NXTSYM)                 
+DIM1$  CODE = '02 ' C ' PIC X OCCURS ' DIM ' TIMES .' :(NXTSYM)                 
+DIM1   CODE = '02 ' C ' PIC 9 USAGE IS COMP-3 OCCURS ' DIM ' TIMES .'           
+                                                 :(NXTSYM)                      
+MULTIDIM                                                                        
+       C = CONVERTNAME(ID)                                                      
+       DIM1 SPAN(NU) . DIM1                                                     
+       DIM2 SPAN(NU) . DIM2                                                     
+       NAMETBL<C> = 1                                                           
+       CODE = '02 ' C '-DIM1 OCCURS ' DIM1 ' TIMES .' :($('DIM2' T))            
+DIM2%  CODE = '03 ' C ' PIC 9 OCCURS ' DIM ' TIMES .' :(NXTSYM)                 
+DIM2$  CODE = '03 ' C ' PIC X OCCURS ' DIM ' TIMES .' :(NXTSYM)                 
+DIM2   CODE = '03 ' C ' PIC 9 USAGE IS COMP-3 OCCURS ' DIM ' TIMES .'           
++                                                :(NXTSYM)                      
+NOTDIM C = CONVERTNAME(LINE)                                                    
+       T =                                                                      
+       LINE RTAB(1) ('$' | '%') . T                                             
+       NAMETBL<C> = 1                            :($('DIM0' T))                 
+DIM0%  CODE = '02 ' C ' PIC 9 .'                 :(NXTSYM)                      
+DIM0$  CODE = '02 ' C ' PIC X .'                 :(NXTSYM)                      
+DIM0   CODE = '02 ' C ' PIC 9 USAGE IS COMP-3 .' :(NXTSYM)                      
+SYMEND                                                                          
+*----------------------------------------------------------------------*        
+* START DUMPING THE PROCEDURE DIVISION NOW..                           *        
+*----------------------------------------------------------------------*        
+       HEAD = GETSOURCE()                        :F(ERROR1)                     
+       CURR = HEAD                                                              
+SOURCELOOP NEXT(CURR) = GETSOURCE()              :F(ALLDONE)                    
+       CURR = NEXT(CURR)                         :(SOURCELOOP)                  
+ALLDONE                                                                         
+*----------------------------------------------------------------------*        
+* PREPARE THE CODE FOR OUTPUT..                                        *        
+*----------------------------------------------------------------------*        
+       CURR = HEAD                                                              
+       CODE = 'PROCEDURE DIVISION.'                                             
+MAINLOOP                                        :($('MAIN_' TYPE(CURR)))        
+MAIN_C                                                                          
+MAIN_L                                                                          
+NEXTLINE                                                                        
+       CURR = NEXT(CURR)                                                        
+       IDENT(CURR)                               :F(MAINLOOP)S(OUTCODE)         
+*----------------------------------------------------------------------*        
+* PROCESS SOURCE, LAST MINUTE CLEAN UP..                               *        
+*----------------------------------------------------------------------*        
+MAIN_S                                                                          
+       VALUE(CURR) #BL SEP #BL =                                                
+  &ANCHOR = 0                                                                   
+       VALUE(CURR) 'NEXT_SENTENCE' = A 'NEXT SENTENCE'                          
+       VALUE(CURR) 'END' BL 'IF' = ' .'                                         
+       VALUE(CURR) 'GOTO' = 'GO TO';                                            
+  &ANCHOR = 1                                                                   
+       VALUE(CURR) RTAB(1) '.'                   :S(NEXTLINE)                   
+*----------------------------------------------------------------------*        
+* SEE IF THE NEXT EXECUTABLE STATEMENT IS A LABEL..                    *        
+*----------------------------------------------------------------------*        
+       C = NEXT(CURR)                                                           
+FINDNEX IDENT(C)                                 :S(PUTPERIOD)                  
+       IDENT(TYPE(C),'L')                        :S(PUTPERIOD)                  
+       IDENT(TYPE(C),'S')                        :S(NEXTLINE)                   
+       C = NEXT(C)                               :(FINDNEX)                     
+PUTPERIOD                                                                       
+       VALUE(CURR) = VALUE(CURR) ' .'            :(NEXTLINE)                    
+*----------------------------------------------------------------------*        
+* NOW DUMP THE OUTPUT                                                  *        
+*----------------------------------------------------------------------*        
+OUTCODE CURR = HEAD                                                             
+OUTLOOP                                          :($('OUT_' TYPE(CURR)))        
+NEXTOUT CURR = NEXT(CURR)                                                       
+        IDENT(CURR)                              :F(OUTLOOP)S(END)              
+*----------------------------------------------------------------------*        
+* DUMP A LABEL..                                                       *        
+*----------------------------------------------------------------------*        
+OUT_L  VALUE(CURR) SPAN(NU) . L RPOS(0) = L '-PARA'                             
+       CODE = VALUE(CURR) ' .'                   :(NEXTOUT)                     
+*----------------------------------------------------------------------*        
+* DUMP A SOURCE STATEMENT..                                            *        
+*----------------------------------------------------------------------*        
+OUT_S  OUT = VALUE(CURR)                                                        
+       IDENT(FLAG(CURR))                         :S(NOFLAGS)                    
+       FLAGOUT =                                                                
+FLGSTMT FLAG(CURR) LEN(1) . FLAGS =      :S($('FLAG_' FLAGS))F(FLAGOUT)         
+FLAG_+ FLAGOUT = FLAGOUT '<ARITH EXP USED WITHIN ANOTHER EXP>'                  
++                                                          :(FLGSTMT)           
+FLAG_I FLAGOUT = FLAGOUT '<UNCONVERTED I/O STMT>' :(FLGSTMT)                    
+FLAG_B FLAGOUT = FLAGOUT '<BUILTIN FUNCTION>'     :(FLGSTMT)                    
+FLAG_R FLAGOUT = FLAGOUT '<RESUME OR SLEEP>'      :(FLGSTMT)                    
+FLAG_F FLAGOUT = FLAGOUT '<UNCONVERTED FOR STMT>' :(FLGSTMT)                    
+FLAG_M FLAGOUT = FLAGOUT '<RSET OR LSET USED IN ARITH EXP>' :(FLGSTMT)          
+FLAG_S FLAGOUT = FLAGOUT '<MIXTURE OF STRING AND ARITH OPS>' :(FLGSTMT)         
+FLAGOUT CODE = '* ==> FOLLOWING STATEMENT CONTAINS:' FLAGOUT                    
+* DON'T COMMENT IF STATEMENTS AS IS WOULD CASCADE COMPILER ERRORS.              
+       VALUE(CURR) #BL 'IF '                     :S(NOFLAGS)                    
+       FLAG(CURR) = 1                                                           
+NOFLAGS                                                                         
+*----------------------------------------------------------------------*        
+* NOW THAT WE'VE REMARKED ON THE STATEMENT DUMP IT.                    *        
+*----------------------------------------------------------------------*        
+   &ANCHOR = 0                                                                  
+COMPRESS OUT '  ' = ' '                          :S(COMPRESS)                   
+     OUT SPAN(' ') ANY(',)') . O = O             :S(COMPRESS)                   
+     OUT '(' #BL '(' BAL . O ')' #BL ')' = '(' O ')' :S(COMPRESS)               
+     OUT ',' NOTANY(' ') . O = ', ' O            :S(COMPRESS)                   
+     OUT ANY(',=<>+-/*') . A #BL '(' #BL *ASGN1PAT . O #BL ')'                  
++        #BL (ANY(',=<>+-/*') | EOS) . B  = A ' ' O ' ' B                       
++                                                :S(COMPRESS)                   
+   &ANCHOR = 1                                                                  
+    OUT = CVRTLINE(OUT)                                                         
+    OUT = STRTOLIT(OUT)                                                         
+    OUT = TRIM(OUT)                                                             
+    C = NEXT(CURR)                                                              
+    IDENT(C)                                     :S(NOJOIN)                     
+    IDENT(TYPE(C),'S')                           :F(NOJOIN)                     
+    VALUE(C) #BL '.' #BL RPOS(0)                 :F(NOJOIN)                     
+    OUT = OUT ' .'                                                              
+    NEXT(CURR) = NEXT(C)                                                        
+NOJOIN                                                                          
+    OUT = DIFFER(FLAG(CURR)) '======* ' OUT                                     
+* CHECK TO SEE IF WE HAVE COMMENTED OUT THE END OF A SENTENCE.                  
+    OUT DIFFER(FLAG(CURR)) RTAB(1) '.'           :F(NOSPLIT)                    
+    OUT RTAB(1) . CODE                                                          
+    OUT = ' .'                                                                  
+NOSPLIT                                                                         
+    CODE = OUT                                   :(NEXTOUT)                     
+*----------------------------------------------------------------------*        
+* PROCESS COMMENTS: COMMENT LINES ARE SPECIAL IN THAT THEY MAY         *        
+* CONTAIN MORE THAN ONE COMMENT IDENTIFIER                             *        
+*----------------------------------------------------------------------*        
+OUT_C                                                                           
+       C    = VALUE(CURR)                                                       
+COMMENTS                                                                        
+       C SPAN(NU) . CMNTNUM =                    :F(SPECCMT)                    
+       CODE = '* ' RTRIM(CMNTBL<CMNTNUM>)                                       
+       CMNTBL<CMNTNUM> =                                                        
+       C 'C;' =                                  :F(NEXTOUT)S(COMMENTS)         
+SPECCMT C SPAN(AL) . L ';'                       :($('SPECCMT' L))              
+SPECCMTW C 'W;' REM . SPECCMT                    :F(NEXTOUT)                    
+       CODE = '* WARNING:' SPECCMT               :(NEXTOUT)                     
+SPECCMTI C 'I;' REM . SPECCMT                    :F(NEXTOUT)                    
+       CODE = '* INFORMATION:' SPECCMT           :(NEXTOUT)                     
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* SUBROUTINES..                                                        *        
+*----------------------------------------------------------------------*        
+*----------------------------------------------------------------------*        
+* DUMP A MAP                                                           *        
+*----------------------------------------------------------------------*        
+PUTAMAP                                                                         
+    VALUE(M) ('M;' | 'FM;') REM . ID = 'FM;' ID                                 
+    IDENT(NEWSYM<ID>)                            :S(NEWMAP)                     
+    VAL = UNIQUE(CONVERTNAME(ID),NAMETBL)                                       
+    NAMETBL<VAL> = 1                                                            
+    B = ' '                                                                     
+    B = EQ(INFD,1) ' REDEFINES ' ID                                             
+    CODE = '01 ' VAL B ' .'                                                     
+    ID = VAL                                     :(PUTAMAP_A)                   
+NEWMAP                                                                          
+    ID = CONVERTNAME(ID)                                                        
+    CODE = '01 ' ID ' .'                                                        
+PUTAMAP_A                                                                       
+    LVL = '02'                                                                  
+    M = NEXT(M)                                                                 
+    PUTAMAP = M                                                                 
+    IDENT(M)                                     :S(RETURN)                     
+    VALUE(M) 'M;' | 'FM;'                        :S(RETURN)                     
+    VALUE(M) 'D;' BREAK('=(') . ID LEN(1) . T REM . VAL                         
+    C =                                                                         
+    IDENT(T,'(')                                 :F(NOTARRAY)                   
+*----------------------------------------------------------------------*        
+* PROCESS AN ARRAY DEFINITION..                                        *        
+*----------------------------------------------------------------------*        
+    VAL = '(' VAL                                                               
+    VAL '(' BAL . D ')=' =                                                      
+    &ANCHOR = 0                                                                 
+DINT D '%' =                                     :S(DINT)                       
+    &ANCHOR = 1                                                                 
+    D BREAK(',')                                 :F(SINGDIM)                    
+*----------------------------------------------------------------------*        
+* HANDLE MULTIPLE DIMENSION ARRAY..                                    *        
+*----------------------------------------------------------------------*        
+    D BREAK(',') . A LEN(1) REM . B = B                                         
+    CODE = '02 ' CONVERTNAME(VAR) '-DIM1 OCCURS ' A ' TIMES .'                  
+    LVL = '03'                                                                  
+SINGDIM                                                                         
+    C = ' OCCURS ' D ' TIMES '                                                  
+NOTARRAY                                                                        
+* GET THE DATA TYPE                                                             
+    T = ""                                                                      
+    ID RTAB(1) ('$' | '%') . T                                                  
+    ID 'FILL$'                                   :S(PUTFILLER)                  
+    IDENT(NEWSYM<ID>)                            :S(PUT1LVL)                    
+    X = UNIQUE(CONVERTNAME(ID),NAMETBL)          :(PUT2LVL)                     
+PUT1LVL                                                                         
+    X = CONVERTNAME(ID)                                                         
+PUT2LVL                                                                         
+    NAMETBL<X> = 1                                                              
+    VAL BREAK(';') ';' BL 'PIC' BL BREAK(';') . LEN  :F(NOPIC)                  
+    CODE = LVL ' ' X ' PIC ' LEN C ' .'          :(PUTAMAP_A)                   
+NOPIC                                                                           
+    VAL SPAN(NU) . LEN                           :($('MAPTYPX' T))              
+MAPTYPX$ CODE = LVL ' ' X ' PIC X(' LEN ')' C ' .' :(PUTAMAP_A)                 
+MAPTYPX% CODE = LVL ' ' X ' PIC 9(' LEN ')' C ' .' :(PUTAMAP_A)                 
+MAPTYPX CODE = LVL ' ' X ' PIC 9(' LEN ') USAGE IS COMP-3' C ' .'               
++                                                :(PUTAMAP_A)                   
+PUTFILLER                                                                       
+    VAL SPAN(NU) . LEN                                                          
+    CODE = LVL ' FILLER PIC X(' LEN ')' C ' .'   :(PUTAMAP_A)                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* GENERATE A UNIQUE NAME                                               *        
+*----------------------------------------------------------------------*        
+UNIQUE                                                                          
+    I = 1                                                                       
+    TVAR = IDENT(TBL<VAR>) VAR                   :S(GOTUVAR)                    
+SETVAR                                                                          
+    TVAR = VAR '-' I                                                            
+    IDENT(TBL<TVAR>)                             :S(GOTUVAR)                    
+    I = I + 1                                    :(SETVAR)                      
+GOTUVAR UNIQUE = TVAR                            :(RETURN)                      
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* CONVERT ALL SYMBOLS IN A LINE TO NEW FORMAT...                       *        
+*----------------------------------------------------------------------*        
+CVRTLINE                                                                        
+    NEWLINE =                                                                   
+CVTL LINE BREAK(AL) . A VARID . B =              :F(CVRTLINERET)                
+     B = DIFFER(NEWSYM<B>) NEWSYM<B>                                            
+     NEWLINE = NEWLINE A B                       :(CVTL)                        
+CVRTLINERET NEWLINE = NEWLINE LINE                                              
+     &ANCHOR = 0                                                                
+LASTCLEAN NEWLINE '%' =                          :S(LASTCLEAN)                  
+     &ANCHOR = 1                                                                
+     CVRTLINE = NEWLINE                          :(RETURN)                      
+*----------------------------------------------------------------------*        
+* CONVERT A VARIABLE NAME TO COBOL STANDARDS                           *        
+*----------------------------------------------------------------------*        
+CONVERTNAME                                                                     
+    OLDNAME = VARIABLE                                                          
+    DIFFER(NEWSYM<VARIABLE>)                     :S(CNVRET)                     
+    TYPE =                                                                      
+    VARIABLE RTAB(1) ('$' | '%') . TYPE          :F(CLEANVAR)                   
+    VARIABLE ARB . A TYPE RPOS(0) = A                                           
+CLEANVAR                                                                        
+    &ANCHOR = 0                                                                 
+    VARIABLE ('$' | '.' | '_') = '-'             :S(CLEANVAR)                   
+    VARIABLE ARB . A '-' RPOS(0) = A                                            
+    &ANCHOR = 1                                                                 
+    VARIABLE = UNIQUE(VARIABLE,NAMETBL)                                         
+    NAMETBL<VARIABLE> = 1                                                       
+    NEWSYM<OLDNAME> = VARIABLE                                                  
+    CONVERTNAME = VARIABLE                       :(RETURN)                      
+CNVRET CONVERTNAME = NEWSYM<VARIABLE>            :(RETURN)                      
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* CONVERT A STR.LIT.NN BACK TO A LITERAL                               *        
+*----------------------------------------------------------------------*        
+STRTOLIT                                                                        
+*----------------------------------------------------------------------*        
+* CONVERT STRING LITERALS BACK TO STRING LITERALS                      *        
+*----------------------------------------------------------------------*        
+    START = POS(0)                                                              
+NEXTSTRLIT                                                                      
+    LINE (START ARB) . A 'STR.LIT.' SPAN(NU) . S '$' REM . B                    
++                                                :F(NOSTRLEN)                   
+    LIT = STRTBL<S>                                                             
+    START = A LIT                                                               
+    LINE = A LIT B                               :S(NEXTSTRLIT)                 
+NOSTRLEN                                                                        
+    STRTOLIT = LINE                              :(RETURN)                      
+*----------------------------------------------------------------------*        
+* READ A LINE FROM THE SOURCE FILE                                     *        
+*----------------------------------------------------------------------*        
+GETSOURCE                                                                       
+    LINE = SOURCE                                :F(FRETURN)                    
+    LINE BREAK(';') . FLAG ';'                                                  
++        BREAK(';') . NEST ';'                                                  
++        BREAK(';') . TYPE ';'                                                  
++        REM . VALUE                                                            
+    GETSOURCE = TEXT(TYPE,VALUE,NEST,FLAG)       :(RETURN)                      
+*----------------------------------------------------------------------*        
+* MISC FUNCTIONS..                                                     *        
+*----------------------------------------------------------------------*        
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+DECR $VAR = $VAR - 1                                                            
+    DECR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+END                                                                             

@@ -1,0 +1,335 @@
+-TITLE   CNVMOD - II (COBOL II)                                                 
+-NOEXECUTE                                                                      
+*----------------------------------------------------------------------*        
+* PROCESS BASIC STATEMENT MODIFIERS                                    *        
+*                                                                      *        
+* INPUTS:                                                              *        
+*                                                                      *        
+*  10  -  SOURCE - INPUT FROM CNVFMT      RECFM=F LRECL=500            *        
+*                                                                      *        
+* OUTPUTS:                                                             *        
+*  11  -  CODE                           RECFM=F LRECL=500             *        
+*----------------------------------------------------------------------*        
+    &DUMP = 1; &TRIM = 1; &ANCHOR = 1                                           
+    INPUT(.SOURCE,'SOURCE')                                                     
+    OUTPUT(.CODE,'CODE')                                                        
+    OUTPUT(.TERMINAL,'TERMINAL','(80A1)')                                       
+    &DUMP = 1                                                                   
+    &TRIM = 1                                                                   
+    &ANCHOR = 1                                                                 
+*----------------------------------------------------------------------*        
+* DEFINE SUBROUTINES AND DATA                                          *        
+*----------------------------------------------------------------------*        
+    DATA('TEXT(TYPE,VALUE,NEXT)')                                               
+    DEFINE('GETTEXT()IN,T,V')                    :(GETTEXT_END)                 
+*----------------------------------------------------------------------*        
+* RETURN THE NEXT LINE FROM THE FILE AS A TEXT RECORD                  *        
+*----------------------------------------------------------------------*        
+GETTEXT                                                                         
+    IN = SOURCE                                  :F(FRETURN)                    
+    IN BREAK(';') . T ';' REM . V                                               
+    GETTEXT = TEXT(T,V,NULL)                     :(RETURN)                      
+GETTEXT_END                                                                     
+*----                                                                           
+    DEFINE('GETLAST(PAT,STR)LINE')                                              
+    DEFINE('INSERT(C,T,V)N')                                                    
+    DEFINE('MOD_IF()STMTA,STMTB,NEWL,START,MOD_NAME')                           
+    DEFINE('MOD_UNLESS()STMTA,STMTB,NEWL,START,MOD_NAME')                       
+    DEFINE('MOD_FOR()STMTA,STMTB,NEWL,START,MOD_NAME')                          
+    DEFINE('MOD_WHILE()STMTA,STMTB,NEWL,START,MOD_NAME')                        
+    DEFINE('MOD_UNTIL()STMTA,STMTB,NEWL,START,MOD_NAME')                        
+                                                                                
+*   TRACE('MOD_NAME','VALUE')                                                   
+*   TRACE('FAIL_MOD','LABEL')                                                   
+*   TRACE('SUCC_MOD','LABEL')                                                   
+*   &TRACE = 10000                                                              
+    LABELS = TABLE(100,10)                                                      
+*----------------------------------------------------------------------*        
+* NOTE THAT THE FOLLOWING ASSIGNES A POSSIBABLY UNPRINTABLE CHARACTER  *        
+* THE BACKSLASH (HEX E0)                                               *        
+*----------------------------------------------------------------------*        
+    SEP = '\'                                                                   
+*----------------------------------------------------------------------*        
+* DEFINE SOME HANDY PATTERNS                                           *        
+*----------------------------------------------------------------------*        
+    DEFINE('INCR(VAR)')                                                         
+    DEFINE('OPT(PATTERN)')                       :(ENDFUNC)                     
+INCR $VAR = $VAR + 1                                                            
+    INCR = $VAR                                  :(RETURN)                      
+OPT OPT = PATTERN | NULL                         :(RETURN)                      
+ENDFUNC                                                                         
+    OPSYN('#','OPT',1)                                                          
+    NU = '0123456789'                                                           
+    AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                           
+    BL = #SPAN(' ')                                                             
+    EOS = BL | RPOS(0)                                                          
+    OPSYM = '**' | '==' | '<>' | '><' | '<=' | '>=' |                           
++        '*' | '/' | '+' | '-' | '^' | '='                                      
+    CONDOP = '==' | '<>' | '><' | '<=' | '>=' | '='                             
+    IDENTIFIER = ANY(AL) #SPAN(AL NU '._')                                      
+    INTID  = IDENTIFIER '%'                                                     
+    STRID  = IDENTIFIER '$'                                                     
+    REALID = IDENTIFIER                                                         
+    VARID = STRID | INTID | REALID                                              
+    INTLIT =  SPAN(NU) '%'                                                      
+    REALLIT = #SPAN(NU) #'.' #SPAN(NU) #('E' #ANY('+-') #SPAN(NU))              
+    NUMLIT = INTLIT | REALLIT                                                   
+    STMTSTART =                                                                 
++        'CHAIN' | 'CHANGE' | 'CLOSE' | 'DATA' | 'DEF' | 'DIM' | 'END' |        
++        'EXTEND' | 'FIELD' | 'FOR' | 'GET' | 'GOSUB' | 'GOTO' | 'IF' |         
++        'INPUT' | 'KILL' | 'LET' | 'LSET' | 'MAT' | 'NAME' | 'NEXT' |          
++        'NOEXTEND' | 'ON' | 'OPEN' | 'PRINT' | 'PUT' | 'RANDOMIZE' |           
++        'READ' | 'RESTORE' | 'RESUME' | 'RETURN' | 'RSET' |                    
++        'SLEEP' | 'STOP' | 'UNLOCK' | 'UNTIL' | 'WAIT' | 'WHILE'               
+    FSTMTSTART =                                                                
++        'CHAIN' | 'CHANGE' | 'CLOSE' | 'DATA' | 'DEF' | 'DIM' | 'END' |        
++        'EXTEND' | 'FIELD' | 'FOR' | 'GET' | 'GOSUB' | 'GOTO' | 'IF' |         
++        'INPUT' | 'KILL' | 'LET' | 'LSET' | 'MAT' | 'NAME' | 'NEXT' |          
++        'NOEXTEND' | 'ON' | 'OPEN' | 'PRINT' | 'PUT' | 'RANDOMIZE' |           
++        'READ' | 'RESTORE' | 'RESUME' | 'RETURN' | 'RSET' |                    
++        'SLEEP' | 'STOP' | 'UNLOCK' | 'WAIT'                                   
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* NOW READ IN THE CODE..                                               *        
+*----------------------------------------------------------------------*        
+    HEAD = GETTEXT()                             :F(END)                        
+    CURRENT = HEAD                                                              
+LOOP NEXT(CURRENT) = GETTEXT()                   :F(DONE)                       
+    CURRENT = NEXT(CURRENT)                      :(LOOP)                        
+DONE                                                                            
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* CHANGE GO TO AND GO SUB TO GOTO AND GOSUB                            *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+    &ANCHOR = 0                                                                 
+GOTOSUB                                                                         
+    IDENT(TYPE(CURRENT),'S')                     :F(NEXTGOTOSUB)                
+REPGOTOSUB                                                                      
+    VALUE(CURRENT) 'GO ' BL ('TO' | 'SUB') . T = 'GO' T :S(REPGOTOSUB)          
+NEXTGOTOSUB CURRENT = NEXT(CURRENT)                                             
+    IDENT(CURRENT)                               :F(GOTOSUB)                    
+    &ANCHOR = 1                                                                 
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* SPLIT IF STATMENTS.                                                  *        
+* IN ORDER TO PROCESS IF STATMENTS WE RESTRUCTURE IF STATMENTS INTO    *        
+* THIS:       IF COND THEN                                             *        
+*         SEP    STMT(S)                                               *        
+*              ELSE                                                    *        
+*         SEP    STMT(S)                                               *        
+*----------------------------------------------------------------------*        
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* SPLIT AFTER THENS                                                    *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+SPLITIFS                                                                        
+* BUT FIRST BUILD A LIST OF ALL LABELS..                                        
+    LABELS<VALUE(CURRENT)> = IDENT(TYPE(CURRENT),'L') VALUE(CURRENT)            
+    IDENT(TYPE(CURRENT),'S')                     :F(NEXTIF)                     
+    LINE = VALUE(CURRENT)                                                       
+    LINE BL ARB . STMTA ' THEN' BL =             :F(NEXTIF)                     
+    IDENT(TRIM(LINE))                            :S(NEXTIF)                     
+    VALUE(CURRENT) = STMTA ' THEN'                                              
+    LINE BL (BREAK(' ') | REM) . L EOS . E =                                    
++       DIFFER(LABELS<L>) 'GOTO ' L E                                           
+    INSERT(CURRENT,'S',SEP LINE)                                                
+NEXTIF CURRENT = NEXT(CURRENT)                                                  
+    IDENT(CURRENT)                               :F(SPLITIFS)                   
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOW SPLIT AFTER ELSES                                                *        
+*----------------------------------------------------------------------*        
+                                                                                
+    CURRENT = HEAD                                                              
+SPLITELSE                                                                       
+    IDENT(TYPE(CURRENT),'S')                     :F(NEXTELSE)                   
+    LINE = VALUE(CURRENT)                                                       
+    LINE BL ARB . STMTA BL 'ELSE' =              :F(NEXTELSE)                   
+    IDENT(TRIM(LINE))                            :S(NEXTELSE)                   
+    LINE BL (BREAK(' ') | REM) . L EOS . E =                                    
++       DIFFER(LABELS<L>) 'GOTO ' L E                                           
+    VALUE(CURRENT) = DIFFER(TRIM(STMTA)) STMTA   :S(INSERTELSE)                 
+    VALUE(CURRENT) = 'ELSE'                      :(INSERTLINE)                  
+INSERTELSE                                                                      
+    CURRENT = INSERT(CURRENT,'S','ELSE')                                        
+INSERTLINE                                                                      
+    INSERT(CURRENT,'S',SEP LINE)                                                
+NEXTELSE CURRENT = NEXT(CURRENT)                                                
+    IDENT(CURRENT)                               :F(SPLITELSE)                  
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* PROCESS STATEMENT MODIFIERS                                          *        
+*----------------------------------------------------------------------*        
+*----------------------------------------------------------------------*        
+* PROCESS THE IF STATEMENT MODIFIER..                                  *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+DONEXTMOD                                                                       
+    IDENT(TYPE(CURRENT),'S')                     :F(NEXTMOD)                    
+DOMOD                                                                           
+    LINE = VALUE(CURRENT)                                                       
+    LINE #SEP BL =                                                              
+    ' ' *MOD_IF() | *MOD_UNLESS() | *MOD_FOR() | *MOD_WHILE() |                 
++       *MOD_UNTIL()                             :S(DOMOD)                      
+NEXTMOD                                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(DONEXTMOD)                  
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* PROCESS THEN ON X GOTO A,B,C                                         *        
+* CONVERTS TO GO TO A B C DEPENDING ON X                               *        
+* NOTE THAT WITH COBOL II THIS CODE CAN BE CHANGED TO USE THE          *        
+* EVALUATE STATEMENT                                                   *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+GETNXTGOTO                                                                      
+    IDENT(TYPE(CURRENT),'S')                     :F(NXTGOTO)                    
+ &ANCHOR = 0                                                                    
+    VALUE(CURRENT) 'ON' VARID . A BL ' ' ('GOTO' | 'GOSUB') . B =               
++       'ON ' A ' ' B                                                           
+ &ANCHOR = 1                                                                    
+    LINE = VALUE(CURRENT)                                                       
+    LINE ARB . A 'ON' BL ARB . UNIT BL ' ' ('GOTO' | 'GOSUB') . ACTION          
++   ' ' BL REM . GOLIST                          :F(NXTGOTO)                    
+    UNIT 'ERROR'                                 :S(NXTGOTO)                    
+*----------------------------------------------------------------------*        
+* CONCAT LINES OF THE GOLIST.                                          *        
+*----------------------------------------------------------------------*        
+    ITEMNUM = 0                                                                 
+    VALUE(CURRENT) = A                                                          
+NXTIFGOTO                                                                       
+    IDENT(TRIM(GOLIST))                          :S(LASTGOTO)                   
+    GOLIST BL (SPAN(NU) | IDENTIFIER) . LBL BL (',' | RPOS(0)) =                
+    VALUE(CURRENT) = TRIM(VALUE(CURRENT))                                       
++        ' IF ' UNIT ' = ' INCR(.ITEMNUM) ' THEN'                               
+    NEWLINE = INSERT(CURRENT,'S',ACTION ' ' LBL)                                
+    NEWLINE = INSERT(NEWLINE,'S','ELSE')                                        
+    CURRENT = INSERT(NEWLINE,'S',' ')            :(NXTIFGOTO)                   
+* ADD A NEXT_SENTENCT SINCE THE LATTER PHASES LOOK FOR 'NEXT'                   
+* WE HAVE TO "CHANGE" IT SOME                                                   
+LASTGOTO VALUE(CURRENT) = 'NEXT_SENTENCE'                                       
+    CURRENT = INSERT(CURRENT,'S','END IF')                                      
+NXTGOTO                                                                         
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(GETNXTGOTO)                 
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* NOW DUMP THE PROGRAM STATEMENTS                                      *        
+*----------------------------------------------------------------------*        
+    CURRENT = HEAD                                                              
+PUNLOOP CODE = TYPE(CURRENT) ';' VALUE(CURRENT)                                 
+    CURRENT = NEXT(CURRENT)                                                     
+    IDENT(CURRENT)                               :F(PUNLOOP)S(END)              
+-EJECT                                                                          
+*----------------------------------------------------------------------*        
+* RETURN THE LAST STRING FOLLOWING A PATTERN THAT MAY OCCUR MORE THAN  *        
+* ONCE.                                                                *        
+*----------------------------------------------------------------------*        
+GETLAST                                                                         
+    LINE = STR                                                                  
+GETLASTL LINE ARB *PAT RTAB(0) . LINE = LINE     :S(GETLASTL)                   
+    IDENT(LINE)                                  :S(FRETURN)                    
+    GETLAST = LINE                               :(RETURN)                      
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+* INSERT A LINE INTO THE LIST                                          *        
+*----------------------------------------------------------------------*        
+INSERT                                                                          
+    N = COPY(C)                                                                 
+    TYPE(N) = T                                                                 
+    VALUE(N) = V                                                                
+    NEXT(N) = NEXT(C)                                                           
+    NEXT(C) = N                                                                 
+    INSERT = N                                   :(RETURN)                      
+*----------------------------------------------------------------------*        
+* ROUTINES FOR STATEMENT MODIFIERS                                     *        
+*----------------------------------------------------------------------*        
+*-- EXIT LABELS FOR STATEMENT MODIFIER ROUTINES                                 
+FAIL_MOD $MOD_NAME = FAIL                        :(RETURN)                      
+SUCC_MOD $MOD_NAME = SUCCEED                     :(RETURN)                      
+*----------------------------------------------------------------------*        
+* ROUTINES FOR THE DIFFERENT STATMENT MODIFIERS                        *        
+*----------------------------------------------------------------------*        
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+*   STMTA IF STMTB -> IF STMTB THEN STMTA ENDIF                        *        
+*----------------------------------------------------------------------*        
+MOD_IF                                                                          
+    MOD_NAME = .MOD_IF                                                          
+    LINE ARB ' IF'                               :F(FAIL_MOD)                   
+    STMTB = GETLAST(' IF ',LINE)                                                
+    STMTB ARB BL ' ' ('THEN' | 'GOTO' | STMTSTART) BL :S(FAIL_MOD)              
+    LINE ARB . STMTA ' IF ' *STMTB RPOS(0)                                      
+    VALUE(CURRENT) ARB . START *STMTA ' IF ' *STMTB RPOS(0) =                   
++       START ' IF ' STMTB ' THEN'                                              
+    NEWL = INSERT(CURRENT,'S',SEP ' ' STMTA)                                    
+    INSERT(NEWL,'S','END IF')                    :(SUCC_MOD)                    
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+*   STMTA UNLESS STMTB -> IF NOT STMTB THEN STMTA ENDIF                *        
+*----------------------------------------------------------------------*        
+MOD_UNLESS                                                                      
+    MOD_NAME = .MOD_UNLESS                                                      
+    LINE ARB ' UNLESS '                          :F(FAIL_MOD)                   
+    STMTB = GETLAST(' UNLESS ',LINE)                                            
+    STMTB ARB ' ' STMTSTART ' '                  :S(FAIL_MOD)                   
+    LINE ARB . STMTA ' UNLESS '  *STMTB RPOS(0)                                 
+    VALUE(CURRENT) ARB . START *STMTA ' UNLESS ' *STMTB RPOS(0) =               
++        START ' IF NOT '  STMTB ' THEN'                                        
+    NEWL = INSERT(CURRENT,'S',SEP ' ' STMTA)                                    
+    INSERT(NEWL,'S','END IF')                    :S(SUCC_MOD)                   
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+*   STMTA FOR STMTB -> FOR STMTB / STMTA / NEXT                        *        
+*----------------------------------------------------------------------*        
+MOD_FOR                                                                         
+    MOD_NAME = .MOD_FOR                                                         
+    LINE ARB BL ' FOR '                          :F(FAIL_MOD)                   
+    STMTB = GETLAST(' FOR ',LINE)                                               
+    STMTB BL ('INPUT' | 'OUTPUT') BL NOTANY('=') :S(FAIL_MOD)                   
+    STMTB ARB ' ' FSTMTSTART                     :S(FAIL_MOD)                   
+    LINE ARB . STMTA ' FOR ' *STMTB RPOS(0)                                     
+    STMTA #(BL #SEP BL) RPOS(0)                  :S(FAIL_MOD)                   
+    VALUE(CURRENT) ARB . START *STMTA ' FOR ' *STMTB =                          
++        START ' FOR ' STMTB                                                    
+    NEWL = INSERT(CURRENT,'S',SEP STMTA)                                        
+    INSERT(NEWL,'S','NEXT')                      :(SUCC_MOD)                    
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+*   STMTA WHILE STMTB -> WHILE STMTB / STMTA / NEXT                    *        
+*----------------------------------------------------------------------*        
+MOD_WHILE                                                                       
+    MOD_NAME = .MOD_WHILE                                                       
+    LINE ARB ' WHILE '                           :F(FAIL_MOD)                   
+    STMTB = GETLAST(' WHILE ',LINE)                                             
+    STMTB ARB ' ' STMTSTART ' '                  :S(FAIL_MOD)                   
+    LINE BL #(SEP BL) 'FOR' ARB . STMTA ' WHILE ' *STMTB RPOS(0)                
++                                                :F(MOD_WHILE1)                 
+    STMTA ARB STMTSTART                          :F(FAIL_MOD)                   
+MOD_WHILE1                                                                      
+    LINE ARB . STMTA ' WHILE '  *STMTB RPOS(0)                                  
+    VALUE(CURRENT) ARB . START *STMTA ' WHILE ' *STMTB RPOS(0) =                
++        START ' WHILE '  STMTB                                                 
+    NEWL = INSERT(CURRENT,'S',SEP STMTA)                                        
+    INSERT(NEWL,'S','NEXT')                      :S(SUCC_MOD)                   
+-SPACE                                                                          
+*----------------------------------------------------------------------*        
+*   STMTA UNTIL STMTB -> UNTIL STMTB / STMTA / NEXT                    *        
+*----------------------------------------------------------------------*        
+MOD_UNTIL                                                                       
+    MOD_NAME = .MOD_UNTIL                                                       
+    LINE ARB ' UNTIL '                           :F(FAIL_MOD)                   
+    STMTB = GETLAST(' UNTIL ',LINE)                                             
+    STMTB ARB ' ' STMTSTART ' '                  :S(NOUNTIL)                    
+    LINE BL #(SEP BL) 'FOR' ARB . STMTA ' UNTIL ' *STMTB RPOS(0)                
++                                                :F(MOD_UNTIL1)                 
+    STMTA ARB STMTSTART                          :F(FAIL_MOD)                   
+MOD_UNTIL1                                                                      
+    LINE ARB . STMTA ' UNTIL '  *STMTB RPOS(0)                                  
+    VALUE(CURRENT) ARB . START *STMTA ' UNTIL ' *STMTB RPOS(0) =                
++        START ' UNTIL '  STMTB                                                 
+    NEWL = INSERT(CURRENT,'S',SEP STMTA)                                        
+    INSERT(NEWL,'S','NEXT')                      :(SUCC_MOD)                    
+END                                                                             
